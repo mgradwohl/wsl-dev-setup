@@ -2,20 +2,29 @@
 set -Eeuo pipefail
 
 # WSL Ubuntu C++ development bootstrap
-# Intended for Ubuntu 26.04, but includes reasonable fallbacks.
+# Intended for Ubuntu WSL, with support for Ubuntu 24.04 and newer.
 #
 # Usage:
 #   chmod +x bootstrap-wsl-dev.sh
 #   ./bootstrap-wsl-dev.sh
 #
 # Optional environment variables:
-#   LLVM_VERSION=22 ./bootstrap-wsl-dev.sh
+#   LLVM_VERSION=23 ./bootstrap-wsl-dev.sh
+#   FULL_UPGRADE=1 ./bootstrap-wsl-dev.sh
 #   INSTALL_VSCODE_EXTENSIONS=0 ./bootstrap-wsl-dev.sh
 #   INSTALL_WINDOWS_VSCODE=0 ./bootstrap-wsl-dev.sh
+#   GENERATE_VSCODE_SETTINGS=1 ./bootstrap-wsl-dev.sh
 
-LLVM_VERSION="${LLVM_VERSION:-22}"
+LLVM_VERSION="${LLVM_VERSION:-23}"
+FULL_UPGRADE="${FULL_UPGRADE:-0}"
 INSTALL_WINDOWS_VSCODE="${INSTALL_WINDOWS_VSCODE:-1}"
 INSTALL_VSCODE_EXTENSIONS="${INSTALL_VSCODE_EXTENSIONS:-1}"
+GENERATE_VSCODE_SETTINGS="${GENERATE_VSCODE_SETTINGS:-0}"
+
+CURRENT_STEP="initialization"
+LLVM_INSTALL_SOURCE="undetermined"
+
+trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
 log() {
     printf '\n\033[1;34m==>\033[0m %s\n' "$*"
@@ -30,6 +39,19 @@ die() {
     exit 1
 }
 
+ok() {
+    printf '\033[1;32m✔\033[0m %s\n' "$*"
+}
+
+on_error() {
+    local exit_code="$1"
+    local line_no="$2"
+    local command_text="$3"
+    printf '\n\033[1;31mERROR:\033[0m step "%s" failed (line %s, exit %s)\n' "$CURRENT_STEP" "$line_no" "$exit_code" >&2
+    printf '\033[1;31mERROR:\033[0m command: %s\n' "$command_text" >&2
+    exit "$exit_code"
+}
+
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
@@ -38,7 +60,20 @@ is_wsl() {
     grep -qiE '(microsoft|wsl)' /proc/version 2>/dev/null
 }
 
+validate_configuration() {
+    CURRENT_STEP="validate configuration"
+
+    [[ "$LLVM_VERSION" =~ ^[0-9]+$ ]] || die "LLVM_VERSION must be an integer (for example 23)."
+    ((LLVM_VERSION >= 23)) || die "LLVM_VERSION must be 23 or newer."
+
+    [[ "$FULL_UPGRADE" =~ ^[01]$ ]] || die "FULL_UPGRADE must be 0 or 1."
+    [[ "$INSTALL_WINDOWS_VSCODE" =~ ^[01]$ ]] || die "INSTALL_WINDOWS_VSCODE must be 0 or 1."
+    [[ "$INSTALL_VSCODE_EXTENSIONS" =~ ^[01]$ ]] || die "INSTALL_VSCODE_EXTENSIONS must be 0 or 1."
+    [[ "$GENERATE_VSCODE_SETTINGS" =~ ^[01]$ ]] || die "GENERATE_VSCODE_SETTINGS must be 0 or 1."
+}
+
 require_ubuntu() {
+    CURRENT_STEP="detect ubuntu release"
     [[ -r /etc/os-release ]] || die "/etc/os-release was not found."
     # shellcheck disable=SC1091
     . /etc/os-release
@@ -46,10 +81,38 @@ require_ubuntu() {
     log "Detected Ubuntu ${VERSION_ID:-unknown} (${VERSION_CODENAME:-unknown})"
 }
 
+show_startup_summary() {
+    CURRENT_STEP="print startup summary"
+    local wsl_status="no"
+    if is_wsl; then
+        wsl_status="yes"
+    fi
+
+    cat <<EOF
+
+Configuration summary:
+  - WSL detected:            ${wsl_status}
+  - Target LLVM major:       ${LLVM_VERSION}
+  - Full apt full-upgrade:   $([[ "$FULL_UPGRADE" == "1" ]] && echo "enabled" || echo "disabled (safer default)")
+  - Install Windows VS Code: $([[ "$INSTALL_WINDOWS_VSCODE" == "1" ]] && echo "yes" || echo "no")
+  - Install VS Code ext:     $([[ "$INSTALL_VSCODE_EXTENSIONS" == "1" ]] && echo "yes" || echo "no")
+  - Generate .vscode files:  $([[ "$GENERATE_VSCODE_SETTINGS" == "1" ]] && echo "yes" || echo "no")
+
+EOF
+}
+
 install_base_packages() {
+    CURRENT_STEP="install base packages"
     log "Updating Ubuntu packages"
     sudo apt-get update
-    sudo DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y
+
+    if [[ "$FULL_UPGRADE" == "1" ]]; then
+        log "Running apt-get full-upgrade (FULL_UPGRADE=1)"
+        sudo DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y
+    else
+        log "Running safer apt-get upgrade (FULL_UPGRADE=0)"
+        sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+    fi
 
     log "Installing core development tools"
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -75,15 +138,18 @@ install_base_packages() {
         unzip \
         wget \
         zip
+    ok "Base packages installed"
 }
 
 install_python_314() {
+    CURRENT_STEP="install python 3.14 (best effort)"
     if apt-cache show python3.14 >/dev/null 2>&1; then
         log "Installing Python 3.14"
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             python3.14 \
             python3.14-dev \
             python3.14-venv
+        ok "Python 3.14 installed"
     else
         warn "python3.14 is not available from this Ubuntu release's configured repositories."
         warn "Leaving the distro-provided python3 installed rather than adding an unofficial PPA."
@@ -91,6 +157,7 @@ install_python_314() {
 }
 
 install_llvm() {
+    CURRENT_STEP="install llvm/clang"
     local packages=(
         "clang-${LLVM_VERSION}"
         "clangd-${LLVM_VERSION}"
@@ -106,9 +173,11 @@ install_llvm() {
     )
 
     if apt-cache show "clang-${LLVM_VERSION}" >/dev/null 2>&1; then
+        LLVM_INSTALL_SOURCE="ubuntu"
         log "Installing LLVM/Clang ${LLVM_VERSION} from Ubuntu repositories"
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
     else
+        LLVM_INSTALL_SOURCE="apt.llvm.org"
         log "LLVM ${LLVM_VERSION} is not in the configured Ubuntu repositories"
         log "Using the official apt.llvm.org installer"
         local installer
@@ -121,17 +190,13 @@ install_llvm() {
         rm -f "$installer"
 
         # Some optional packages may not be installed by llvm.sh "all" on every release.
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            "clangd-${LLVM_VERSION}" \
-            "clang-format-${LLVM_VERSION}" \
-            "clang-tidy-${LLVM_VERSION}" \
-            "clang-tools-${LLVM_VERSION}" \
-            "libc++-${LLVM_VERSION}-dev" \
-            "libc++abi-${LLVM_VERSION}-dev"
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
     fi
+    ok "LLVM/Clang ${LLVM_VERSION} installed (${LLVM_INSTALL_SOURCE})"
 }
 
 configure_llvm_alternatives() {
+    CURRENT_STEP="configure llvm alternatives"
     log "Registering LLVM ${LLVM_VERSION} as the default toolchain"
 
     local tools=(
@@ -150,8 +215,11 @@ configure_llvm_alternatives() {
         llvm-profdata
         llvm-ranlib
         llvm-readelf
+        llvm-symbolizer
         llvm-size
         llvm-strip
+        llvm-config
+        llvm-link
     )
 
     local tool versioned
@@ -162,9 +230,23 @@ configure_llvm_alternatives() {
                 --install "/usr/bin/${tool}" "$tool" "$versioned" "$((LLVM_VERSION * 10))"
         fi
     done
+    ok "LLVM alternatives configured"
+}
+
+# Detect the Windows username from WSL via cmd.exe for path probing.
+detect_windows_user() {
+    if ! command_exists cmd.exe; then
+        return 1
+    fi
+
+    local detected
+    detected="$(cmd.exe /C "echo %USERNAME%" 2>/dev/null | tr -d '\r' | xargs || true)"
+    [[ -n "$detected" ]] || return 1
+    printf '%s\n' "$detected"
 }
 
 install_windows_vscode() {
+    CURRENT_STEP="install windows vscode"
     [[ "$INSTALL_WINDOWS_VSCODE" == "1" ]] || return 0
 
     if ! is_wsl; then
@@ -182,15 +264,22 @@ install_windows_vscode() {
         return 0
     fi
 
+    if ! powershell.exe -NoProfile -NonInteractive -Command "if (\$null -eq (Get-Command winget -ErrorAction SilentlyContinue)) { exit 1 }" >/dev/null 2>&1; then
+        warn "winget is unavailable in this Windows environment. Install VS Code manually on Windows."
+        return 0
+    fi
+
     log "Installing Windows VS Code with winget"
     powershell.exe -NoProfile -NonInteractive -Command \
         'winget install --id Microsoft.VisualStudioCode --exact --scope machine --accept-package-agreements --accept-source-agreements' \
         || warn "winget could not install VS Code. You may need to run the script again from an elevated Windows terminal."
 
     log "Installing the Windows VS Code WSL extension"
+    # shellcheck disable=SC2016 # PowerShell expression uses $code, not shell expansion.
     powershell.exe -NoProfile -NonInteractive -Command \
         '$code = Get-Command code -ErrorAction SilentlyContinue; if ($code) { code --install-extension ms-vscode-remote.remote-wsl --force }' \
         || warn "Could not install the Windows-side WSL extension automatically."
+    ok "Windows VS Code install step completed"
 }
 
 find_code_command() {
@@ -205,20 +294,32 @@ find_code_command() {
     fi
 
     # Common system-wide and per-user Windows VS Code paths exposed inside WSL.
-    local candidate
-    for candidate in \
-        "/mnt/c/Program Files/Microsoft VS Code/bin/code" \
-        "/mnt/c/Users/${WINUSER:-}/AppData/Local/Programs/Microsoft VS Code/bin/code"; do
+    local candidate windows_user
+    windows_user="${WINUSER:-}"
+    if [[ -z "$windows_user" ]]; then
+        windows_user="$(detect_windows_user || true)"
+    fi
+
+    for candidate in "/mnt/c/Program Files/Microsoft VS Code/bin/code"; do
         if [[ -n "${candidate}" && -x "${candidate}" ]]; then
             printf '%s\n' "$candidate"
             return 0
         fi
     done
 
+    if [[ -n "$windows_user" ]]; then
+        candidate="/mnt/c/Users/${windows_user}/AppData/Local/Programs/Microsoft VS Code/bin/code"
+        if [[ -x "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    fi
+
     return 1
 }
 
 install_vscode_extensions() {
+    CURRENT_STEP="install vscode extensions"
     [[ "$INSTALL_VSCODE_EXTENSIONS" == "1" ]] || return 0
 
     local code_cmd
@@ -233,9 +334,8 @@ install_vscode_extensions() {
         llvm-vs-code-extensions.vscode-clangd
         ms-vscode.cmake-tools
         twxs.cmake
-        ms-python.python
-        ms-python.vscode-pylance
-        eamodio.gitlens
+        ms-vscode.cpptools-themes
+        streetsidesoftware.code-spell-checker
     )
 
     local extension
@@ -243,9 +343,62 @@ install_vscode_extensions() {
         "$code_cmd" --install-extension "$extension" --force \
             || warn "Could not install VS Code extension: $extension"
     done
+    ok "VS Code extensions step completed"
+}
+
+generate_vscode_workspace_defaults() {
+    CURRENT_STEP="generate vscode workspace defaults"
+    [[ "$GENERATE_VSCODE_SETTINGS" == "1" ]] || return 0
+
+    local vscode_dir settings_file extensions_file
+    vscode_dir="${PWD}/.vscode"
+    settings_file="${vscode_dir}/settings.json"
+    extensions_file="${vscode_dir}/extensions.json"
+
+    mkdir -p "$vscode_dir"
+
+    if [[ ! -e "$settings_file" ]]; then
+        cat >"$settings_file" <<'EOF'
+{
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "clangd.arguments": [
+    "--background-index",
+    "--clang-tidy",
+    "--header-insertion=iwyu"
+  ],
+  "cmake.generator": "Ninja",
+  "cmake.configureOnOpen": true,
+  "cmake.exportCompileCommandsFile": true,
+  "editor.formatOnSave": true,
+  "files.associations": {
+    "*.ipp": "cpp",
+    "*.tpp": "cpp"
+  }
+}
+EOF
+        ok "Created ${settings_file}"
+    else
+        warn "${settings_file} already exists; leaving it unchanged."
+    fi
+
+    if [[ ! -e "$extensions_file" ]]; then
+        cat >"$extensions_file" <<'EOF'
+{
+  "recommendations": [
+    "llvm-vs-code-extensions.vscode-clangd",
+    "ms-vscode.cmake-tools",
+    "twxs.cmake"
+  ]
+}
+EOF
+        ok "Created ${extensions_file}"
+    else
+        warn "${extensions_file} already exists; leaving it unchanged."
+    fi
 }
 
 configure_git_and_ccache() {
+    CURRENT_STEP="configure git and ccache"
     log "Applying small developer-friendly defaults"
     git config --global init.defaultBranch main
     git config --global core.autocrlf input
@@ -257,15 +410,18 @@ compression = true
 compression_level = 6
 compiler_check = content
 EOF
+    ok "Git and ccache configured"
 }
 
 cleanup() {
+    CURRENT_STEP="cleanup package cache"
     log "Cleaning package cache"
     sudo apt-get autoremove -y
     sudo apt-get clean
 }
 
 show_versions() {
+    CURRENT_STEP="show versions and next actions"
     log "Installed versions"
 
     local commands=(
@@ -296,11 +452,15 @@ show_versions() {
 
 Bootstrap complete.
 
+LLVM source:
+  ${LLVM_INSTALL_SOURCE}
+
 Recommended CMake configure command:
   cmake -S . -B build -G Ninja \\
     -DCMAKE_C_COMPILER=clang \\
     -DCMAKE_CXX_COMPILER=clang++ \\
-    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \\
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
 Open the current WSL directory in VS Code:
   code .
@@ -308,17 +468,25 @@ Open the current WSL directory in VS Code:
 If 'code' is not found immediately, run this in Windows PowerShell:
   wsl --shutdown
 Then reopen Ubuntu.
+
+Recommended next actions for C++ in WSL:
+  1) Keep code under Linux paths (for example: ~/src/my-project)
+  2) Configure with Ninja + compile_commands.json (command above)
+  3) Run clangd from VS Code in this WSL environment
 EOF
 }
 
 main() {
+    validate_configuration
     require_ubuntu
+    show_startup_summary
     install_base_packages
     install_python_314
     install_llvm
     configure_llvm_alternatives
     install_windows_vscode
     install_vscode_extensions
+    generate_vscode_workspace_defaults
     configure_git_and_ccache
     cleanup
     show_versions
