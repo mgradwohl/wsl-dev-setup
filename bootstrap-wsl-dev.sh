@@ -153,7 +153,7 @@ update_apt_metadata_and_resolve_llvm() {
             LLVM_VERSION_SOURCE_DETAIL="latest from configured apt metadata"
         else
             LLVM_VERSION="${MIN_LLVM_VERSION}"
-            LLVM_VERSION_SOURCE_DETAIL="fallback minimum (${MIN_LLVM_VERSION}) when no LLVM >=${MIN_LLVM_VERSION} clang package was found in current metadata; add apt.llvm.org manually if you need a newer pinned version"
+            LLVM_VERSION_SOURCE_DETAIL="fallback minimum (${MIN_LLVM_VERSION}); no LLVM >=${MIN_LLVM_VERSION} package found in current apt metadata — will install from apt.llvm.org if unavailable in Ubuntu repos"
         fi
     else
         LLVM_VERSION_SOURCE_DETAIL="explicitly requested"

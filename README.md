@@ -5,8 +5,7 @@ Bootstrap a modern **C++ in WSL** environment with a **clang/clangd-first** work
 ## What this gives you
 
 - Ubuntu WSL bootstrap (24.04+)
-- LLVM/Clang toolchain with default policy: **latest available major >= 23**
-- Predictable fallback to `apt.llvm.org` when Ubuntu repos do not provide the selected LLVM major
+- LLVM/Clang toolchain with default policy: **latest available major >= 23** from configured APT repos; falls back to `apt.llvm.org` when the selected version is not in Ubuntu repos
 - `update-alternatives` registration so `clang`, `clang++`, `clangd`, `clang-tidy`, etc. resolve to the selected LLVM major
 - VS Code setup flow for WSL (optional Windows install + optional extension install)
 - Interactive optional-tool selection at startup
