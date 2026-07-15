@@ -140,7 +140,7 @@ update_apt_metadata_and_resolve_llvm() {
     if [[ "$LLVM_VERSION_REQUESTED" == "latest" ]]; then
         local resolved
         resolved="$(
-            apt-cache search --names-only '^clang-[0-9]+$' \
+            apt-cache search --names-only '^clang-[0-9][0-9]*$' \
                 | awk '{print $1}' \
                 | sed -E 's/^clang-([0-9]+)$/\1/' \
                 | awk -v min="${MIN_LLVM_VERSION}" '$1 >= min' \
