@@ -354,8 +354,17 @@ install_llvm() {
 
         sudo apt-get update
 
-        # Some packages may not be available on every release.
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+        local installable=()
+        local pkg
+        for pkg in "${packages[@]}"; do
+            if apt-cache show "$pkg" >/dev/null 2>&1; then
+                installable+=("$pkg")
+            else
+                warn "LLVM package not available from configured repos: $pkg"
+            fi
+        done
+        ((${#installable[@]} > 0)) || die "No installable LLVM packages found for LLVM_VERSION=${LLVM_VERSION}."
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${installable[@]}"
     fi
     ok "LLVM/Clang ${LLVM_VERSION} installed (${LLVM_INSTALL_SOURCE})"
 }
