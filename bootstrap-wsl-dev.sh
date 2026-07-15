@@ -338,17 +338,23 @@ install_llvm() {
     else
         LLVM_INSTALL_SOURCE="apt.llvm.org"
         log "LLVM ${LLVM_VERSION} is not in the configured Ubuntu repositories"
-        log "Using the official apt.llvm.org installer"
-        local installer
-        installer="$(mktemp)"
-        curl --fail --location --silent --show-error \
-            https://apt.llvm.org/llvm.sh \
-            --output "$installer"
-        chmod +x "$installer"
-        sudo "$installer" "$LLVM_VERSION" all
-        rm -f "$installer"
+        log "Adding apt.llvm.org repository for LLVM ${LLVM_VERSION}"
 
-        # Some optional packages may not be installed by llvm.sh "all" on every release.
+        local keyring_path="/usr/share/keyrings/llvm-snapshot.gpg"
+        curl --fail --location --silent --show-error \
+            --proto '=https' --tlsv1.2 \
+            --retry 3 --retry-connrefused \
+            https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo gpg --dearmor --yes -o "$keyring_path"
+
+        local sources_file="/etc/apt/sources.list.d/llvm-${LLVM_VERSION}.list"
+        printf 'deb [signed-by=%s] https://apt.llvm.org/%s/ llvm-toolchain-%s-%s main\n' \
+            "$keyring_path" "${VERSION_CODENAME}" "${VERSION_CODENAME}" "${LLVM_VERSION}" \
+            | sudo tee "$sources_file" >/dev/null
+
+        sudo apt-get update
+
+        # Some packages may not be available on every release.
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
     fi
     ok "LLVM/Clang ${LLVM_VERSION} installed (${LLVM_INSTALL_SOURCE})"
@@ -516,6 +522,9 @@ generate_vscode_workspace_defaults() {
     settings_file="${vscode_dir}/settings.json"
     extensions_file="${vscode_dir}/extensions.json"
 
+    if [[ -e "$vscode_dir" && ! -d "$vscode_dir" ]]; then
+        die "${vscode_dir} exists but is not a directory; remove or rename it before generating VS Code workspace defaults."
+    fi
     mkdir -p "$vscode_dir"
 
     if [[ ! -e "$settings_file" ]]; then
