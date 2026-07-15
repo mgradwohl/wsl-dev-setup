@@ -28,7 +28,7 @@ Bootstrap a modern **C++ in WSL** environment with a **clang/clangd-first** work
 ## Quick start
 
 ```bash
-git clone https://github.com/<your-account>/wsl-dev-setup.git
+git clone https://github.com/mgradwohl/wsl-dev-setup.git
 cd wsl-dev-setup
 chmod +x bootstrap-wsl-dev.sh
 ./bootstrap-wsl-dev.sh
