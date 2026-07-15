@@ -9,20 +9,26 @@ set -Eeuo pipefail
 #   ./bootstrap-wsl-dev.sh
 #
 # Optional environment variables:
-#   LLVM_VERSION=23 ./bootstrap-wsl-dev.sh
-#   FULL_UPGRADE=1 ./bootstrap-wsl-dev.sh
+#   LLVM_VERSION=latest ./bootstrap-wsl-dev.sh
 #   INSTALL_VSCODE_EXTENSIONS=0 ./bootstrap-wsl-dev.sh
 #   INSTALL_WINDOWS_VSCODE=0 ./bootstrap-wsl-dev.sh
 #   GENERATE_VSCODE_SETTINGS=1 ./bootstrap-wsl-dev.sh
 
-LLVM_VERSION="${LLVM_VERSION:-23}"
-FULL_UPGRADE="${FULL_UPGRADE:-0}"
+LLVM_VERSION="${LLVM_VERSION:-latest}"
+MIN_LLVM_VERSION=23
 INSTALL_WINDOWS_VSCODE="${INSTALL_WINDOWS_VSCODE:-1}"
 INSTALL_VSCODE_EXTENSIONS="${INSTALL_VSCODE_EXTENSIONS:-1}"
-GENERATE_VSCODE_SETTINGS="${GENERATE_VSCODE_SETTINGS:-0}"
+GENERATE_VSCODE_SETTINGS="${GENERATE_VSCODE_SETTINGS:-}"
+INSTALL_OPTIONAL_TOOLS_PROMPT="${INSTALL_OPTIONAL_TOOLS_PROMPT:-1}"
+INSTALL_GIT_LFS="${INSTALL_GIT_LFS:-}"
+INSTALL_DOCS_TOOLS="${INSTALL_DOCS_TOOLS:-}"
+INSTALL_IWYU="${INSTALL_IWYU:-}"
+INSTALL_PROFILING_TOOLS="${INSTALL_PROFILING_TOOLS:-}"
 
-CURRENT_STEP="initialization"
+CURRENT_STEP="startup"
 LLVM_INSTALL_SOURCE="undetermined"
+LLVM_VERSION_REQUESTED="$LLVM_VERSION"
+LLVM_VERSION_SOURCE_DETAIL="pending resolution"
 
 trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
@@ -60,16 +66,61 @@ is_wsl() {
     grep -qiE '(microsoft|wsl)' /proc/version 2>/dev/null
 }
 
+is_interactive_terminal() {
+    [[ -t 0 && -t 1 ]]
+}
+
+validate_bool() {
+    local name="$1"
+    local value="$2"
+    [[ "$value" =~ ^[01]$ ]] || die "${name} must be 0 or 1."
+}
+
+validate_bool_or_empty() {
+    local name="$1"
+    local value="$2"
+    [[ -z "$value" || "$value" =~ ^[01]$ ]] || die "${name} must be 0, 1, or unset."
+}
+
+ask_yes_no() {
+    local prompt="$1"
+    local default="${2:-N}"
+    local answer
+
+    while true; do
+        if [[ "$default" == "Y" ]]; then
+            read -r -p "${prompt} [Y/n]: " answer
+            answer="${answer:-Y}"
+        else
+            read -r -p "${prompt} [y/N]: " answer
+            answer="${answer:-N}"
+        fi
+
+        case "${answer,,}" in
+            y|yes) return 0 ;;
+            n|no) return 1 ;;
+            *) warn "Please answer y or n." ;;
+        esac
+    done
+}
+
 validate_configuration() {
     CURRENT_STEP="validate configuration"
 
-    [[ "$LLVM_VERSION" =~ ^[0-9]+$ ]] || die "LLVM_VERSION must be an integer (for example 23)."
-    ((LLVM_VERSION >= 23)) || die "LLVM_VERSION must be 23 or newer."
+    if [[ "$LLVM_VERSION" != "latest" ]]; then
+        [[ "$LLVM_VERSION" =~ ^[0-9]+$ ]] || die "LLVM_VERSION must be 'latest' or an integer (for example ${MIN_LLVM_VERSION})."
+        ((LLVM_VERSION >= MIN_LLVM_VERSION)) || die "When numeric, LLVM_VERSION must be ${MIN_LLVM_VERSION} or newer."
+    fi
 
-    [[ "$FULL_UPGRADE" =~ ^[01]$ ]] || die "FULL_UPGRADE must be 0 or 1."
-    [[ "$INSTALL_WINDOWS_VSCODE" =~ ^[01]$ ]] || die "INSTALL_WINDOWS_VSCODE must be 0 or 1."
-    [[ "$INSTALL_VSCODE_EXTENSIONS" =~ ^[01]$ ]] || die "INSTALL_VSCODE_EXTENSIONS must be 0 or 1."
-    [[ "$GENERATE_VSCODE_SETTINGS" =~ ^[01]$ ]] || die "GENERATE_VSCODE_SETTINGS must be 0 or 1."
+    validate_bool "INSTALL_WINDOWS_VSCODE" "$INSTALL_WINDOWS_VSCODE"
+    validate_bool "INSTALL_VSCODE_EXTENSIONS" "$INSTALL_VSCODE_EXTENSIONS"
+    validate_bool "INSTALL_OPTIONAL_TOOLS_PROMPT" "$INSTALL_OPTIONAL_TOOLS_PROMPT"
+
+    validate_bool_or_empty "GENERATE_VSCODE_SETTINGS" "$GENERATE_VSCODE_SETTINGS"
+    validate_bool_or_empty "INSTALL_GIT_LFS" "$INSTALL_GIT_LFS"
+    validate_bool_or_empty "INSTALL_DOCS_TOOLS" "$INSTALL_DOCS_TOOLS"
+    validate_bool_or_empty "INSTALL_IWYU" "$INSTALL_IWYU"
+    validate_bool_or_empty "INSTALL_PROFILING_TOOLS" "$INSTALL_PROFILING_TOOLS"
 }
 
 require_ubuntu() {
@@ -79,6 +130,74 @@ require_ubuntu() {
     . /etc/os-release
     [[ "${ID:-}" == "ubuntu" ]] || die "This script supports Ubuntu; detected ${ID:-unknown}."
     log "Detected Ubuntu ${VERSION_ID:-unknown} (${VERSION_CODENAME:-unknown})"
+}
+
+update_apt_metadata_and_resolve_llvm() {
+    CURRENT_STEP="update apt metadata and resolve llvm version"
+    log "Updating apt package metadata"
+    sudo apt-get update
+
+    if [[ "$LLVM_VERSION_REQUESTED" == "latest" ]]; then
+        local resolved
+        resolved="$(
+            apt-cache search --names-only '^clang-[0-9]+$' \
+                | awk '{print $1}' \
+                | sed -E 's/^clang-([0-9]+)$/\1/' \
+                | awk -v min="${MIN_LLVM_VERSION}" '$1 >= min' \
+                | sort -nr \
+                | head -n 1
+        )"
+
+        if [[ -n "$resolved" ]]; then
+            LLVM_VERSION="$resolved"
+            LLVM_VERSION_SOURCE_DETAIL="latest from configured apt metadata"
+        else
+            LLVM_VERSION="${MIN_LLVM_VERSION}"
+            LLVM_VERSION_SOURCE_DETAIL="fallback minimum (${MIN_LLVM_VERSION}) when no LLVM >=${MIN_LLVM_VERSION} clang package was found in current metadata; add apt.llvm.org manually if you need a newer pinned version"
+        fi
+    else
+        LLVM_VERSION_SOURCE_DETAIL="explicitly requested"
+    fi
+}
+
+configure_optional_choices() {
+    CURRENT_STEP="collect optional install choices"
+
+    if [[ "$INSTALL_OPTIONAL_TOOLS_PROMPT" == "1" ]] && is_interactive_terminal; then
+        log "Optional tool selection"
+
+        if [[ -z "$INSTALL_GIT_LFS" ]]; then
+            if ask_yes_no "Install Git LFS?" "Y"; then INSTALL_GIT_LFS="1"; else INSTALL_GIT_LFS="0"; fi
+        fi
+
+        if [[ -z "$INSTALL_DOCS_TOOLS" ]]; then
+            if ask_yes_no "Install documentation tools (Doxygen + Graphviz)?" "N"; then INSTALL_DOCS_TOOLS="1"; else INSTALL_DOCS_TOOLS="0"; fi
+        fi
+
+        if [[ -z "$INSTALL_IWYU" ]]; then
+            if ask_yes_no "Install Include-What-You-Use (IWYU) when available?" "N"; then INSTALL_IWYU="1"; else INSTALL_IWYU="0"; fi
+        fi
+
+        if [[ -z "$INSTALL_PROFILING_TOOLS" ]]; then
+            if ask_yes_no "Install profiling tools (Valgrind + Heaptrack + gperftools) when available?" "N"; then INSTALL_PROFILING_TOOLS="1"; else INSTALL_PROFILING_TOOLS="0"; fi
+        fi
+
+        if [[ -z "$GENERATE_VSCODE_SETTINGS" ]]; then
+            if ask_yes_no "Generate .vscode/settings.json and .vscode/extensions.json in current directory?" "N"; then GENERATE_VSCODE_SETTINGS="1"; else GENERATE_VSCODE_SETTINGS="0"; fi
+        fi
+    fi
+
+    INSTALL_GIT_LFS="${INSTALL_GIT_LFS:-0}"
+    INSTALL_DOCS_TOOLS="${INSTALL_DOCS_TOOLS:-0}"
+    INSTALL_IWYU="${INSTALL_IWYU:-0}"
+    INSTALL_PROFILING_TOOLS="${INSTALL_PROFILING_TOOLS:-0}"
+    GENERATE_VSCODE_SETTINGS="${GENERATE_VSCODE_SETTINGS:-0}"
+
+    validate_bool "INSTALL_GIT_LFS" "$INSTALL_GIT_LFS"
+    validate_bool "INSTALL_DOCS_TOOLS" "$INSTALL_DOCS_TOOLS"
+    validate_bool "INSTALL_IWYU" "$INSTALL_IWYU"
+    validate_bool "INSTALL_PROFILING_TOOLS" "$INSTALL_PROFILING_TOOLS"
+    validate_bool "GENERATE_VSCODE_SETTINGS" "$GENERATE_VSCODE_SETTINGS"
 }
 
 show_startup_summary() {
@@ -92,27 +211,24 @@ show_startup_summary() {
 
 Configuration summary:
   - WSL detected:            ${wsl_status}
-  - Target LLVM major:       ${LLVM_VERSION}
-  - Full apt full-upgrade:   $([[ "$FULL_UPGRADE" == "1" ]] && echo "enabled" || echo "disabled (safer default)")
+  - LLVM request:            ${LLVM_VERSION_REQUESTED}
+  - LLVM selected:           ${LLVM_VERSION} (${LLVM_VERSION_SOURCE_DETAIL})
   - Install Windows VS Code: $([[ "$INSTALL_WINDOWS_VSCODE" == "1" ]] && echo "yes" || echo "no")
   - Install VS Code ext:     $([[ "$INSTALL_VSCODE_EXTENSIONS" == "1" ]] && echo "yes" || echo "no")
   - Generate .vscode files:  $([[ "$GENERATE_VSCODE_SETTINGS" == "1" ]] && echo "yes" || echo "no")
+  - Install Git LFS:         $([[ "$INSTALL_GIT_LFS" == "1" ]] && echo "yes" || echo "no")
+  - Install docs tools:      $([[ "$INSTALL_DOCS_TOOLS" == "1" ]] && echo "yes" || echo "no")
+  - Install IWYU:            $([[ "$INSTALL_IWYU" == "1" ]] && echo "yes" || echo "no")
+  - Install profiling tools: $([[ "$INSTALL_PROFILING_TOOLS" == "1" ]] && echo "yes" || echo "no")
 
 EOF
 }
 
 install_base_packages() {
     CURRENT_STEP="install base packages"
-    log "Updating Ubuntu packages"
-    sudo apt-get update
-
-    if [[ "$FULL_UPGRADE" == "1" ]]; then
-        log "Running apt-get full-upgrade (FULL_UPGRADE=1)"
-        sudo DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y
-    else
-        log "Running safer apt-get upgrade (FULL_UPGRADE=0)"
-        sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
-    fi
+    # Deliberately avoid full-upgrade to reduce risk in repeatable bootstrap runs.
+    log "Applying available package upgrades"
+    sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
     log "Installing core development tools"
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -139,6 +255,49 @@ install_base_packages() {
         wget \
         zip
     ok "Base packages installed"
+}
+
+install_optional_packages() {
+    CURRENT_STEP="install optional packages"
+    local requested=()
+    local installable=()
+    local package
+
+    if [[ "$INSTALL_GIT_LFS" == "1" ]]; then
+        requested+=("git-lfs")
+    fi
+    if [[ "$INSTALL_DOCS_TOOLS" == "1" ]]; then
+        requested+=("doxygen" "graphviz")
+    fi
+    if [[ "$INSTALL_IWYU" == "1" ]]; then
+        requested+=("include-what-you-use")
+    fi
+    if [[ "$INSTALL_PROFILING_TOOLS" == "1" ]]; then
+        requested+=("valgrind" "heaptrack" "libgoogle-perftools-dev")
+    fi
+
+    if ((${#requested[@]} == 0)); then
+        log "No optional packages selected"
+        return 0
+    fi
+
+    for package in "${requested[@]}"; do
+        if apt-cache show "$package" >/dev/null 2>&1; then
+            installable+=("$package")
+        else
+            warn "Optional package not available on this release: $package"
+        fi
+    done
+
+    if ((${#installable[@]} > 0)); then
+        log "Installing selected optional packages"
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${installable[@]}"
+        ok "Optional packages installed"
+    fi
+
+    if [[ "$INSTALL_GIT_LFS" == "1" ]] && command_exists git-lfs; then
+        git lfs install >/dev/null 2>&1 || true
+    fi
 }
 
 install_python_314() {
@@ -233,16 +392,21 @@ configure_llvm_alternatives() {
     ok "LLVM alternatives configured"
 }
 
-# Detect the Windows username from WSL via cmd.exe for path probing.
-detect_windows_user() {
+# Try to detect the Windows username from WSL via cmd.exe for path probing.
+try_detect_windows_user() {
     if ! command_exists cmd.exe; then
         return 1
     fi
 
     local detected
-    detected="$(cmd.exe /C "echo %USERNAME%" 2>/dev/null | tr -d '\r' | xargs || true)"
+    detected="$(cmd.exe /C "echo %USERNAME%" 2>/dev/null | tr -d '\r' || true)"
     [[ -n "$detected" ]] || return 1
     printf '%s\n' "$detected"
+}
+
+winget_available() {
+    powershell.exe -NoProfile -NonInteractive -Command \
+        "if (\$null -eq (Get-Command winget -ErrorAction SilentlyContinue)) { exit 1 }"
 }
 
 install_windows_vscode() {
@@ -264,7 +428,7 @@ install_windows_vscode() {
         return 0
     fi
 
-    if ! powershell.exe -NoProfile -NonInteractive -Command "if (\$null -eq (Get-Command winget -ErrorAction SilentlyContinue)) { exit 1 }" >/dev/null 2>&1; then
+    if ! winget_available >/dev/null 2>&1; then
         warn "winget is unavailable in this Windows environment. Install VS Code manually on Windows."
         return 0
     fi
@@ -275,7 +439,7 @@ install_windows_vscode() {
         || warn "winget could not install VS Code. You may need to run the script again from an elevated Windows terminal."
 
     log "Installing the Windows VS Code WSL extension"
-    # shellcheck disable=SC2016 # PowerShell expression uses $code, not shell expansion.
+    # shellcheck disable=SC2016 # PowerShell variable $code must not be shell-expanded by bash.
     powershell.exe -NoProfile -NonInteractive -Command \
         '$code = Get-Command code -ErrorAction SilentlyContinue; if ($code) { code --install-extension ms-vscode-remote.remote-wsl --force }' \
         || warn "Could not install the Windows-side WSL extension automatically."
@@ -297,15 +461,14 @@ find_code_command() {
     local candidate windows_user
     windows_user="${WINUSER:-}"
     if [[ -z "$windows_user" ]]; then
-        windows_user="$(detect_windows_user || true)"
+        windows_user="$(try_detect_windows_user || true)"
     fi
 
-    for candidate in "/mnt/c/Program Files/Microsoft VS Code/bin/code"; do
-        if [[ -n "${candidate}" && -x "${candidate}" ]]; then
-            printf '%s\n' "$candidate"
-            return 0
-        fi
-    done
+    candidate="/mnt/c/Program Files/Microsoft VS Code/bin/code"
+    if [[ -x "$candidate" ]]; then
+        printf '%s\n' "$candidate"
+        return 0
+    fi
 
     if [[ -n "$windows_user" ]]; then
         candidate="/mnt/c/Users/${windows_user}/AppData/Local/Programs/Microsoft VS Code/bin/code"
@@ -334,8 +497,6 @@ install_vscode_extensions() {
         llvm-vs-code-extensions.vscode-clangd
         ms-vscode.cmake-tools
         twxs.cmake
-        ms-vscode.cpptools-themes
-        streetsidesoftware.code-spell-checker
     )
 
     local extension
@@ -479,8 +640,11 @@ EOF
 main() {
     validate_configuration
     require_ubuntu
+    update_apt_metadata_and_resolve_llvm
+    configure_optional_choices
     show_startup_summary
     install_base_packages
+    install_optional_packages
     install_python_314
     install_llvm
     configure_llvm_alternatives

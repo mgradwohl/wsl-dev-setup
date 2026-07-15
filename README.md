@@ -1,23 +1,19 @@
-# WSL C++ Development Bootstrap
+# WSL C++ Dev Setup (Clang-first)
 
-A reproducible bootstrap for a modern **C++23+** development environment on **Ubuntu WSL** with **VS Code**, **Clang/LLVM**, **CMake**, and **Ninja**.
+Bootstrap a modern **C++ in WSL** environment with a **clang/clangd-first** workflow for **VS Code**.
 
-## Features
+## What this gives you
 
-- Ubuntu WSL-focused bootstrap (24.04+)
-- LLVM/Clang setup with **default LLVM 23**
-- LLVM package source fallback:
-  - Ubuntu repositories when available
-  - `apt.llvm.org` when needed
-- Registers LLVM tools with `update-alternatives` so unversioned commands use the selected LLVM major
-- Installs core development tools:
-  - build-essential, CMake, Ninja, ccache, Git, GDB
-  - Python 3 + venv + pip (plus Python 3.14 when available in distro repos)
-  - curl/wget, jq, zip/unzip, pkg-config
-- Optional Windows VS Code install (from WSL via PowerShell + winget)
-- Optional VS Code extension installation
-- Optional generation of `.vscode/settings.json` and `.vscode/extensions.json` for clangd-first C++ workflows
-- Idempotent and safe to rerun
+- Ubuntu WSL bootstrap (24.04+)
+- LLVM/Clang toolchain with default policy: **latest available major >= 23**
+- Predictable fallback to `apt.llvm.org` when Ubuntu repos do not provide the selected LLVM major
+- `update-alternatives` registration so `clang`, `clang++`, `clangd`, `clang-tidy`, etc. resolve to the selected LLVM major
+- VS Code setup flow for WSL (optional Windows install + optional extension install)
+- Interactive optional-tool selection at startup
+- Optional generation of `.vscode/settings.json` + `.vscode/extensions.json`
+- Safe reruns (idempotent design)
+
+> No Microsoft C/C++ language server by default. This setup is **all clang, all the time**.
 
 ---
 
@@ -25,11 +21,11 @@ A reproducible bootstrap for a modern **C++23+** development environment on **Ub
 
 - Windows 11
 - WSL2
-- Ubuntu 24.04 or newer in WSL
+- Ubuntu 24.04+ in WSL
 
 ---
 
-## Installation
+## Quick start
 
 ```bash
 git clone https://github.com/<your-account>/wsl-dev-setup.git
@@ -38,42 +34,62 @@ chmod +x bootstrap-wsl-dev.sh
 ./bootstrap-wsl-dev.sh
 ```
 
----
-
-## What changed (latest)
-
-- Default LLVM moved from **22** to **23**
-- Added explicit configuration validation (for example `LLVM_VERSION` must be integer `>=23`)
-- `apt-get full-upgrade` is now **opt-in** (`FULL_UPGRADE=1`)
-- Added clearer startup summary and failure diagnostics
-- Hardened Windows VS Code detection/install checks for WSL
-- Added optional `.vscode` workspace defaults generation (`GENERATE_VSCODE_SETTINGS=1`)
+The script will ask which optional tool groups you want.
 
 ---
 
-## Environment variables
+## Non-interactive usage
 
-| Variable | Default | Description |
-|---|---|---|
-| `LLVM_VERSION` | `23` | LLVM major version to install (`>=23`) |
-| `FULL_UPGRADE` | `0` | `1` enables `apt-get full-upgrade`; `0` uses safer `apt-get upgrade` |
-| `INSTALL_WINDOWS_VSCODE` | `1` | Install Windows VS Code via winget when running under WSL |
-| `INSTALL_VSCODE_EXTENSIONS` | `1` | Install recommended VS Code extensions |
-| `GENERATE_VSCODE_SETTINGS` | `0` | Generate `.vscode` workspace defaults in current directory |
-
-Examples:
+Use env vars to skip prompts and force choices:
 
 ```bash
-LLVM_VERSION=24 ./bootstrap-wsl-dev.sh
-FULL_UPGRADE=1 ./bootstrap-wsl-dev.sh
-GENERATE_VSCODE_SETTINGS=1 ./bootstrap-wsl-dev.sh
+INSTALL_OPTIONAL_TOOLS_PROMPT=0 \
+INSTALL_GIT_LFS=1 \
+INSTALL_DOCS_TOOLS=0 \
+INSTALL_IWYU=1 \
+INSTALL_PROFILING_TOOLS=0 \
+GENERATE_VSCODE_SETTINGS=1 \
+./bootstrap-wsl-dev.sh
 ```
 
 ---
 
-## After installation
+## Configuration
 
-Verify toolchain:
+| Variable | Default | Meaning |
+|---|---|---|
+| `LLVM_VERSION` | `latest` | `latest` = highest available LLVM major `>=23`; numeric values must be `>=23` |
+| `INSTALL_WINDOWS_VSCODE` | `1` | Install Windows VS Code through winget when in WSL |
+| `INSTALL_VSCODE_EXTENSIONS` | `1` | Install recommended clangd/CMake extensions |
+| `INSTALL_OPTIONAL_TOOLS_PROMPT` | `1` | Ask for optional tool groups at startup (interactive terminals) |
+| `INSTALL_GIT_LFS` | unset | Force Git LFS install (`1`/`0`) |
+| `INSTALL_DOCS_TOOLS` | unset | Force Doxygen + Graphviz install (`1`/`0`) |
+| `INSTALL_IWYU` | unset | Force Include-What-You-Use install (`1`/`0`) |
+| `INSTALL_PROFILING_TOOLS` | unset | Force Valgrind + Heaptrack + gperftools install (`1`/`0`) |
+| `GENERATE_VSCODE_SETTINGS` | unset | Force generation of `.vscode` defaults (`1`/`0`) |
+
+---
+
+## Should you generate `.vscode` defaults?
+
+If you are unsure, choose **No** first.
+
+Choose **Yes** when:
+- you are starting a new repo
+- you want a ready-to-go clangd + CMake + Ninja baseline
+- you do not already have custom workspace settings
+
+Choose **No** when:
+- your project already has `.vscode/settings.json` and/or `.vscode/extensions.json`
+- you want to keep editor config fully manual
+
+The script never overwrites existing `.vscode` files.
+
+---
+
+## After install
+
+Verify:
 
 ```bash
 clang --version
@@ -84,7 +100,7 @@ ninja --version
 python3 --version
 ```
 
-Open project in VS Code from WSL:
+Open the current directory in VS Code (from WSL):
 
 ```bash
 code .
@@ -101,7 +117,7 @@ cmake -S . -B build \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 ```
 
-Build and test:
+Build + test:
 
 ```bash
 cmake --build build --parallel
@@ -110,17 +126,17 @@ ctest --test-dir build --output-on-failure
 
 ---
 
-## WSL + VS Code guidance
+## Best practices for WSL C++
 
-- Keep active source code under Linux paths (for example `~/src`) instead of `/mnt/c` for better IO performance.
-- Use the clangd extension as the primary C++ language server.
-- Prefer Ninja + `compile_commands.json` for fast CMake + clangd iteration.
+- Keep projects under Linux paths (`~/src/...`), not `/mnt/c/...`, for performance.
+- Use `clangd` as the language server.
+- Keep `compile_commands.json` enabled for reliable clangd indexing.
 
 ---
 
 ## Troubleshooting
 
-### `code` not found after installation
+### `code` command not found
 
 From Windows PowerShell:
 
@@ -128,19 +144,29 @@ From Windows PowerShell:
 wsl --shutdown
 ```
 
-Then reopen Ubuntu and rerun the bootstrap if needed.
+Then reopen Ubuntu and rerun bootstrap if needed.
 
-### LLVM package resolution issues
+### LLVM package issues
 
-Rerun the script. It re-checks package availability and falls back to `apt.llvm.org` when required.
+Rerun bootstrap. It re-checks package availability and uses `apt.llvm.org` when needed.
 
 ### `winget` unavailable
 
-Install VS Code manually on Windows and rerun the script with:
+Install VS Code manually on Windows, then rerun with:
 
 ```bash
 INSTALL_WINDOWS_VSCODE=0 ./bootstrap-wsl-dev.sh
 ```
+
+---
+
+## What changed recently
+
+- LLVM default policy moved from fixed `22` to `latest >=23`
+- `apt-get full-upgrade` path removed
+- Added startup config validation and better failure diagnostics
+- Added interactive optional-tool selection
+- Kept VS Code extensions clangd/CMake-focused
 
 ---
 
@@ -150,8 +176,6 @@ INSTALL_WINDOWS_VSCODE=0 ./bootstrap-wsl-dev.sh
 git pull
 ./bootstrap-wsl-dev.sh
 ```
-
-The script is designed to be safely re-run.
 
 ---
 
