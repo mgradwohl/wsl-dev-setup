@@ -89,10 +89,14 @@ ask_yes_no() {
 
     while true; do
         if [[ "$default" == "Y" ]]; then
-            read -r -p "${prompt} [Y/n]: " answer
+            if ! read -r -p "${prompt} [Y/n]: " answer; then
+                answer="Y"
+            fi
             answer="${answer:-Y}"
         else
-            read -r -p "${prompt} [y/N]: " answer
+            if ! read -r -p "${prompt} [y/N]: " answer; then
+                answer="N"
+            fi
             answer="${answer:-N}"
         fi
 
