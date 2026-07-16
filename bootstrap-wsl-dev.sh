@@ -347,13 +347,15 @@ install_llvm() {
             https://apt.llvm.org/llvm-snapshot.gpg.key \
             | sudo gpg --dearmor --yes -o "$keyring_path"
 
-        local sources_file="/etc/apt/sources.list.d/llvm-${LLVM_VERSION}.list"
-        printf 'deb [signed-by=%s] https://apt.llvm.org/%s/ llvm-toolchain-%s-%s main\n' \
-            "$keyring_path" "${VERSION_CODENAME}" "${VERSION_CODENAME}" "${LLVM_VERSION}" \
-            | sudo tee "$sources_file" >/dev/null
+local sources_file="/etc/apt/sources.list.d/llvm-${LLVM_VERSION}.list"
+printf 'deb [signed-by=%s] https://apt.llvm.org/%s/ llvm-toolchain-%s-%s main\n' \
+    "$keyring_path" "${VERSION_CODENAME}" "${VERSION_CODENAME}" "${LLVM_VERSION}" \
+    | sudo tee "$sources_file" >/dev/null
 
-        sudo apt-get update
-
+if ! sudo apt-get update; then
+    sudo rm -f "$sources_file"
+    die "Failed to update apt metadata after adding apt.llvm.org for LLVM ${LLVM_VERSION} (Ubuntu: ${VERSION_CODENAME}). Removed ${sources_file}; verify this release/version is supported by apt.llvm.org."
+fi
         local installable=()
         local pkg
         for pkg in "${packages[@]}"; do
