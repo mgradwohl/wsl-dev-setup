@@ -84,7 +84,7 @@ GENERATE_VSCODE_SETTINGS=1 \
 When `INSTALL_IWYU=1`, the script now tries the best available package candidate for your selected LLVM major (`include-what-you-use-<major>`, then `include-what-you-use`, then `iwyu`). If none are available on your release, it logs a clear warning and continues.
 
 Tool profile bundles:
-- Performance: `mold`, `hyperfine`, and perf helpers when available.
+- Performance: `mold`, `hyperfine`, `hotspot`, and perf helpers when available.
 - Reliability: `cppcheck`, `bear`, and ELF/debug diagnostics helpers when available.
 - Testing: `lcov`, `gcovr`, `catch2`, and `libgtest-dev` when available.
 - Productivity: `ripgrep`, `fd-find`, `bat`, `fzf`, `yq`, `tree`, `shellcheck`, `shfmt`, `htop`, `btop`, `ncdu`, and `tmux` when available.

@@ -231,7 +231,7 @@ configure_optional_choices() {
 
         log "Developer tool bundles"
         if [[ -z "$INSTALL_PROFILE_PERFORMANCE" ]]; then
-            if ask_yes_no "Install Performance bundle (mold, hyperfine, perf helpers when available)?" "N"; then INSTALL_PROFILE_PERFORMANCE="1"; else INSTALL_PROFILE_PERFORMANCE="0"; fi
+            if ask_yes_no "Install Performance bundle (mold, hyperfine, hotspot, perf helpers when available)?" "N"; then INSTALL_PROFILE_PERFORMANCE="1"; else INSTALL_PROFILE_PERFORMANCE="0"; fi
         fi
         if [[ -z "$INSTALL_PROFILE_RELIABILITY" ]]; then
             if ask_yes_no "Install Reliability bundle (cppcheck, bear, debuginfod, diagnostics tools)?" "N"; then INSTALL_PROFILE_RELIABILITY="1"; else INSTALL_PROFILE_RELIABILITY="0"; fi
@@ -431,7 +431,7 @@ install_tool_profile_bundles() {
     local package
 
     if [[ "$INSTALL_PROFILE_PERFORMANCE" == "1" ]]; then
-        requested+=("mold" "hyperfine" "linux-tools-common" "linux-tools-generic")
+        requested+=("mold" "hyperfine" "hotspot" "linux-tools-common" "linux-tools-generic")
     fi
     if [[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]]; then
         requested+=("cppcheck" "bear" "elfutils" "debuginfod")
@@ -1051,10 +1051,11 @@ show_versions() {
         printf '\n$ %s\n' "$item"
         local output
         local status=0
-        set +e
-        output="$(bash -lc "$item" 2>&1)"
-        status=$?
-        set -e
+        if output="$(bash -lc "$item" 2>&1)"; then
+            status=0
+        else
+            status=$?
+        fi
 
         if [[ "$status" -eq 0 ]]; then
             if [[ -n "$output" ]]; then
