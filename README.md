@@ -65,6 +65,9 @@ GENERATE_VSCODE_SETTINGS=1 \
 | `LLVM_VERSION` | `latest` | `latest` = highest available LLVM major `>=23`; numeric values must be `>=23` |
 | `INSTALL_WINDOWS_VSCODE` | `1` | Install Windows VS Code through winget when in WSL |
 | `INSTALL_VSCODE_EXTENSIONS` | `1` | Install recommended clangd/CMake extensions |
+| `INSTALL_VSCODE_EXT_CLANGD` | unset | Install `llvm-vs-code-extensions.vscode-clangd` (`1`/`0`); defaults to `1` when `INSTALL_VSCODE_EXTENSIONS=1` |
+| `INSTALL_VSCODE_EXT_CMAKE_TOOLS` | unset | Install `ms-vscode.cmake-tools` (`1`/`0`); defaults to `1` when `INSTALL_VSCODE_EXTENSIONS=1` |
+| `INSTALL_VSCODE_EXT_CMAKE_SYNTAX` | unset | Install `twxs.cmake` (`1`/`0`); defaults to `1` when `INSTALL_VSCODE_EXTENSIONS=1` |
 | `INSTALL_OPTIONAL_TOOLS_PROMPT` | `1` | Ask for optional tool groups at startup (interactive terminals) |
 | `CHECK_ONLY` | `0` | Print a complete installation plan and exit without making install/config changes (`1`/`0`) |
 | `INSTALL_GIT_LFS` | unset | Force Git LFS install (`1`/`0`) |
@@ -86,11 +89,14 @@ Tool profile bundles:
 
 Check-only mode (`CHECK_ONLY=1`) prints a full action plan and exits before installs or configuration changes.
 
+When `INSTALL_OPTIONAL_TOOLS_PROMPT=1` in an interactive terminal and `INSTALL_VSCODE_EXTENSIONS=1`, the script asks at startup whether to install each recommended VS Code extension individually.
+
 Runtime output behavior:
 - After apt metadata refresh, the script prints a compact "Resolved LLVM selection" line instead of reprinting the full startup summary.
 - Optional LLVM package availability warnings are grouped to reduce output noise.
 - A final "Warnings recap" is printed at the end when non-fatal warnings occurred.
-- Tool version checks now print explicit status for unavailable commands instead of blank lines.
+- Tool version checks now distinguish non-zero exits from unavailable commands.
+- A one-line toolchain summary is printed near the end (optional LLVM missing + alternatives configured/skipped).
 
 ---
 
@@ -211,9 +217,11 @@ INSTALL_WINDOWS_VSCODE=0 ./bootstrap-wsl-dev.sh
 - Added startup config validation and better failure diagnostics
 - Added interactive optional-tool selection
 - Kept VS Code extensions clangd/CMake-focused
+- Added per-extension runtime prompts for VS Code extension installation
 - Added compact resolved-LLVM summary after metadata refresh
 - Grouped optional LLVM warnings and added end-of-run warnings recap
-- Improved version reporting so missing tools are shown explicitly
+- Improved version reporting to show non-zero exits vs unavailable commands
+- Added one-line toolchain summary near completion
 
 ---
 

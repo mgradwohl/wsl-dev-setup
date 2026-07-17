@@ -18,6 +18,9 @@ LLVM_VERSION="${LLVM_VERSION:-latest}"
 MIN_LLVM_VERSION=23
 INSTALL_WINDOWS_VSCODE="${INSTALL_WINDOWS_VSCODE:-1}"
 INSTALL_VSCODE_EXTENSIONS="${INSTALL_VSCODE_EXTENSIONS:-1}"
+INSTALL_VSCODE_EXT_CLANGD="${INSTALL_VSCODE_EXT_CLANGD:-}"
+INSTALL_VSCODE_EXT_CMAKE_TOOLS="${INSTALL_VSCODE_EXT_CMAKE_TOOLS:-}"
+INSTALL_VSCODE_EXT_CMAKE_SYNTAX="${INSTALL_VSCODE_EXT_CMAKE_SYNTAX:-}"
 GENERATE_VSCODE_SETTINGS="${GENERATE_VSCODE_SETTINGS:-}"
 INSTALL_OPTIONAL_TOOLS_PROMPT="${INSTALL_OPTIONAL_TOOLS_PROMPT:-1}"
 INSTALL_GIT_LFS="${INSTALL_GIT_LFS:-}"
@@ -36,6 +39,9 @@ LLVM_VERSION_REQUESTED="$LLVM_VERSION"
 LLVM_VERSION_SOURCE_DETAIL="pending resolution"
 IWYU_INSTALL_CANDIDATE=""
 WARNINGS=()
+LLVM_OPTIONAL_MISSING=()
+LLVM_ALTERNATIVES_CONFIGURED=()
+LLVM_ALTERNATIVES_SKIPPED=()
 
 trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
@@ -130,6 +136,9 @@ validate_configuration() {
     validate_bool "CHECK_ONLY" "$CHECK_ONLY"
 
     validate_bool_or_empty "GENERATE_VSCODE_SETTINGS" "$GENERATE_VSCODE_SETTINGS"
+    validate_bool_or_empty "INSTALL_VSCODE_EXT_CLANGD" "$INSTALL_VSCODE_EXT_CLANGD"
+    validate_bool_or_empty "INSTALL_VSCODE_EXT_CMAKE_TOOLS" "$INSTALL_VSCODE_EXT_CMAKE_TOOLS"
+    validate_bool_or_empty "INSTALL_VSCODE_EXT_CMAKE_SYNTAX" "$INSTALL_VSCODE_EXT_CMAKE_SYNTAX"
     validate_bool_or_empty "INSTALL_GIT_LFS" "$INSTALL_GIT_LFS"
     validate_bool_or_empty "INSTALL_GITHUB_CLI" "$INSTALL_GITHUB_CLI"
     validate_bool_or_empty "INSTALL_DOCS_TOOLS" "$INSTALL_DOCS_TOOLS"
@@ -229,6 +238,19 @@ configure_optional_choices() {
         if [[ -z "$GENERATE_VSCODE_SETTINGS" ]]; then
             if ask_yes_no "Generate .vscode/settings.json and .vscode/extensions.json in current directory?" "N"; then GENERATE_VSCODE_SETTINGS="1"; else GENERATE_VSCODE_SETTINGS="0"; fi
         fi
+
+        if [[ "$INSTALL_VSCODE_EXTENSIONS" == "1" ]]; then
+            log "VS Code extension selection"
+            if [[ -z "$INSTALL_VSCODE_EXT_CLANGD" ]]; then
+                if ask_yes_no "Install VS Code extension: llvm-vs-code-extensions.vscode-clangd?" "Y"; then INSTALL_VSCODE_EXT_CLANGD="1"; else INSTALL_VSCODE_EXT_CLANGD="0"; fi
+            fi
+            if [[ -z "$INSTALL_VSCODE_EXT_CMAKE_TOOLS" ]]; then
+                if ask_yes_no "Install VS Code extension: ms-vscode.cmake-tools?" "Y"; then INSTALL_VSCODE_EXT_CMAKE_TOOLS="1"; else INSTALL_VSCODE_EXT_CMAKE_TOOLS="0"; fi
+            fi
+            if [[ -z "$INSTALL_VSCODE_EXT_CMAKE_SYNTAX" ]]; then
+                if ask_yes_no "Install VS Code extension: twxs.cmake?" "Y"; then INSTALL_VSCODE_EXT_CMAKE_SYNTAX="1"; else INSTALL_VSCODE_EXT_CMAKE_SYNTAX="0"; fi
+            fi
+        fi
     fi
 
     INSTALL_GIT_LFS="${INSTALL_GIT_LFS:-0}"
@@ -240,6 +262,15 @@ configure_optional_choices() {
     INSTALL_PROFILE_RELIABILITY="${INSTALL_PROFILE_RELIABILITY:-0}"
     INSTALL_PROFILE_TESTING="${INSTALL_PROFILE_TESTING:-0}"
     GENERATE_VSCODE_SETTINGS="${GENERATE_VSCODE_SETTINGS:-0}"
+    if [[ "$INSTALL_VSCODE_EXTENSIONS" == "1" ]]; then
+        INSTALL_VSCODE_EXT_CLANGD="${INSTALL_VSCODE_EXT_CLANGD:-1}"
+        INSTALL_VSCODE_EXT_CMAKE_TOOLS="${INSTALL_VSCODE_EXT_CMAKE_TOOLS:-1}"
+        INSTALL_VSCODE_EXT_CMAKE_SYNTAX="${INSTALL_VSCODE_EXT_CMAKE_SYNTAX:-1}"
+    else
+        INSTALL_VSCODE_EXT_CLANGD="${INSTALL_VSCODE_EXT_CLANGD:-0}"
+        INSTALL_VSCODE_EXT_CMAKE_TOOLS="${INSTALL_VSCODE_EXT_CMAKE_TOOLS:-0}"
+        INSTALL_VSCODE_EXT_CMAKE_SYNTAX="${INSTALL_VSCODE_EXT_CMAKE_SYNTAX:-0}"
+    fi
 
     validate_bool "INSTALL_GIT_LFS" "$INSTALL_GIT_LFS"
     validate_bool "INSTALL_GITHUB_CLI" "$INSTALL_GITHUB_CLI"
@@ -250,6 +281,9 @@ configure_optional_choices() {
     validate_bool "INSTALL_PROFILE_RELIABILITY" "$INSTALL_PROFILE_RELIABILITY"
     validate_bool "INSTALL_PROFILE_TESTING" "$INSTALL_PROFILE_TESTING"
     validate_bool "GENERATE_VSCODE_SETTINGS" "$GENERATE_VSCODE_SETTINGS"
+    validate_bool "INSTALL_VSCODE_EXT_CLANGD" "$INSTALL_VSCODE_EXT_CLANGD"
+    validate_bool "INSTALL_VSCODE_EXT_CMAKE_TOOLS" "$INSTALL_VSCODE_EXT_CMAKE_TOOLS"
+    validate_bool "INSTALL_VSCODE_EXT_CMAKE_SYNTAX" "$INSTALL_VSCODE_EXT_CMAKE_SYNTAX"
 }
 
 show_startup_summary() {
@@ -267,6 +301,9 @@ Configuration summary:
   - LLVM selected:           ${LLVM_VERSION} (${LLVM_VERSION_SOURCE_DETAIL})
   - Install Windows VS Code: $([[ "$INSTALL_WINDOWS_VSCODE" == "1" ]] && echo "yes" || echo "no")
   - Install VS Code ext:     $([[ "$INSTALL_VSCODE_EXTENSIONS" == "1" ]] && echo "yes" || echo "no")
+    - VS Code ext (clangd):    $([[ "$INSTALL_VSCODE_EXT_CLANGD" == "1" ]] && echo "yes" || echo "no")
+    - VS Code ext (cmake):     $([[ "$INSTALL_VSCODE_EXT_CMAKE_TOOLS" == "1" ]] && echo "yes" || echo "no")
+    - VS Code ext (syntax):    $([[ "$INSTALL_VSCODE_EXT_CMAKE_SYNTAX" == "1" ]] && echo "yes" || echo "no")
   - Generate .vscode files:  $([[ "$GENERATE_VSCODE_SETTINGS" == "1" ]] && echo "yes" || echo "no")
   - Check-only mode:         $([[ "$CHECK_ONLY" == "1" ]] && echo "yes" || echo "no")
   - Install Git LFS:         $([[ "$INSTALL_GIT_LFS" == "1" ]] && echo "yes" || echo "no")
@@ -437,6 +474,9 @@ Planned actions:
   6) Install IWYU if selected and available via candidate resolution
   7) Configure LLVM alternatives
   8) Optionally install Windows VS Code (machine scope) and VS Code extensions
+      - clangd extension: $([[ "$INSTALL_VSCODE_EXT_CLANGD" == "1" ]] && echo "yes" || echo "no")
+      - CMake Tools extension: $([[ "$INSTALL_VSCODE_EXT_CMAKE_TOOLS" == "1" ]] && echo "yes" || echo "no")
+      - CMake syntax extension: $([[ "$INSTALL_VSCODE_EXT_CMAKE_SYNTAX" == "1" ]] && echo "yes" || echo "no")
   9) Optionally generate .vscode defaults in current directory
   10) Configure git + ccache defaults and show versions
 
@@ -546,6 +586,8 @@ install_llvm() {
             warn "Optional LLVM packages not available from Ubuntu repos: ${missing_optional[*]}"
         fi
 
+        LLVM_OPTIONAL_MISSING=("${missing_optional[@]}")
+
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${installable[@]}"
     else
         LLVM_INSTALL_SOURCE="apt.llvm.org"
@@ -598,6 +640,8 @@ install_llvm() {
             warn "Optional LLVM packages not available from configured repos: ${missing_optional[*]}"
         fi
 
+        LLVM_OPTIONAL_MISSING=("${missing_optional[@]}")
+
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${installable[@]}"
     fi
     ok "LLVM/Clang ${LLVM_VERSION} installed (${LLVM_INSTALL_SOURCE})"
@@ -648,6 +692,9 @@ configure_llvm_alternatives() {
     if ((${#skipped[@]} > 0)); then
         warn "Skipped alternative registration (versioned tool missing): ${skipped[*]}"
     fi
+
+    LLVM_ALTERNATIVES_CONFIGURED=("${configured[@]}")
+    LLVM_ALTERNATIVES_SKIPPED=("${skipped[@]}")
 }
 
 # Try to detect the Windows username from WSL via cmd.exe for path probing.
@@ -751,16 +798,26 @@ install_vscode_extensions() {
     fi
 
     log "Installing recommended VS Code extensions"
-    local extensions=(
-        llvm-vs-code-extensions.vscode-clangd
-        ms-vscode.cmake-tools
-        twxs.cmake
-    )
+    local extensions=()
+    if [[ "$INSTALL_VSCODE_EXT_CLANGD" == "1" ]]; then
+        extensions+=("llvm-vs-code-extensions.vscode-clangd")
+    fi
+    if [[ "$INSTALL_VSCODE_EXT_CMAKE_TOOLS" == "1" ]]; then
+        extensions+=("ms-vscode.cmake-tools")
+    fi
+    if [[ "$INSTALL_VSCODE_EXT_CMAKE_SYNTAX" == "1" ]]; then
+        extensions+=("twxs.cmake")
+    fi
+
+    if ((${#extensions[@]} == 0)); then
+        log "No VS Code extensions selected"
+        return 0
+    fi
 
     local extension
     for extension in "${extensions[@]}"; do
         if ! "$code_cmd" --install-extension "$extension" --force \
-            2> >(grep -Ev 'DEP0169|url\.parse\(\)|trace-deprecation|CVEs are not issued' >&2); then
+            2> >(grep -Ev 'DEP0169|url\.parse\(\)|trace-deprecation|CVEs are not issued' >&2 || true); then
             warn "Could not install VS Code extension: $extension"
         fi
     done
@@ -865,19 +922,43 @@ show_versions() {
     for item in "${commands[@]}"; do
         printf '\n$ %s\n' "$item"
         local output
-        if output="$(bash -lc "$item" 2>&1)"; then
+        local status=0
+        set +e
+        output="$(bash -lc "$item" 2>&1)"
+        status=$?
+        set -e
+
+        if [[ "$status" -eq 0 ]]; then
             if [[ -n "$output" ]]; then
                 printf '%s\n' "$output" | head -n 3
             else
                 printf '(no output)\n'
             fi
         else
-            printf 'unavailable\n'
+            if [[ -n "$output" ]]; then
+                printf 'non-zero exit (%s)\n' "$status"
+            else
+                printf 'unavailable\n'
+            fi
             if [[ -n "$output" ]]; then
                 printf '%s\n' "$output" | head -n 2
             fi
         fi
     done
+
+    local missing_optional_text="none"
+    local skipped_alt_text="none"
+    if ((${#LLVM_OPTIONAL_MISSING[@]} > 0)); then
+        missing_optional_text="${LLVM_OPTIONAL_MISSING[*]}"
+    fi
+    if ((${#LLVM_ALTERNATIVES_SKIPPED[@]} > 0)); then
+        skipped_alt_text="${LLVM_ALTERNATIVES_SKIPPED[*]}"
+    fi
+    printf '\nToolchain summary: optional LLVM missing [%s]; alternatives configured=%d skipped=%d (%s)\n' \
+        "$missing_optional_text" \
+        "${#LLVM_ALTERNATIVES_CONFIGURED[@]}" \
+        "${#LLVM_ALTERNATIVES_SKIPPED[@]}" \
+        "$skipped_alt_text"
 
     if command_exists python3.14; then
         printf '\n$ python3.14 --version\n'
