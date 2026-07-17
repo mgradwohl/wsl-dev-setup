@@ -322,7 +322,7 @@ Configuration summary:
   - Install IWYU:            $([[ "$INSTALL_IWYU" == "1" ]] && echo "yes" || echo "no")
   - Install profiling tools: $([[ "$INSTALL_PROFILING_TOOLS" == "1" ]] && echo "yes" || echo "no")
   - Perf bundle:             $([[ "$INSTALL_PROFILE_PERFORMANCE" == "1" ]] && echo "yes" || echo "no")
-  - Reliability bundle:      $([[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]] && echo "yes" || echo "no")
+    - Reliability bundle:      $([[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]] && echo "yes" || echo "no")
     - Testing bundle:          $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
     - Productivity bundle:     $([[ "$INSTALL_PROFILE_PRODUCTIVITY" == "1" ]] && echo "yes" || echo "no")
 
@@ -495,9 +495,9 @@ Planned actions:
      - Profiling tools: $([[ "$INSTALL_PROFILING_TOOLS" == "1" ]] && echo "yes" || echo "no")
   4) Install tool profile bundles by selection:
      - Performance bundle: $([[ "$INSTALL_PROFILE_PERFORMANCE" == "1" ]] && echo "yes" || echo "no")
-     - Reliability bundle: $([[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]] && echo "yes" || echo "no")
-        - Testing bundle: $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
-        - Productivity bundle: $([[ "$INSTALL_PROFILE_PRODUCTIVITY" == "1" ]] && echo "yes" || echo "no")
+      - Reliability bundle: $([[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]] && echo "yes" || echo "no")
+      - Testing bundle: $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
+      - Productivity bundle: $([[ "$INSTALL_PROFILE_PRODUCTIVITY" == "1" ]] && echo "yes" || echo "no")
   5) Install LLVM/Clang (${LLVM_VERSION_REQUESTED}) required package set; for optional LLVM packages try exact version, then apt.llvm.org exact, then unversioned fallback at least one major behind selected LLVM
   6) Install IWYU if selected and available via candidate resolution
   7) Configure LLVM alternatives
@@ -567,7 +567,33 @@ install_python_314() {
 }
 
 enable_apt_llvm_repo() {
+    local required="${1:-1}"
     [[ "$APT_LLVM_REPO_ENABLED" == "0" ]] || return 0
+
+    # apt.llvm.org does not publish every Ubuntu codename immediately.
+    # Keep this list conservative and update as new codenames appear.
+    local supported_codenames=(
+        noble
+        jammy
+        focal
+        bionic
+    )
+    local codename_supported=0
+    local codename
+    for codename in "${supported_codenames[@]}"; do
+        if [[ "$VERSION_CODENAME" == "$codename" ]]; then
+            codename_supported=1
+            break
+        fi
+    done
+
+    if [[ "$codename_supported" == "0" ]]; then
+        if [[ "$required" == "1" ]]; then
+            die "apt.llvm.org does not currently list Ubuntu codename '${VERSION_CODENAME}' for LLVM ${LLVM_VERSION}. Required LLVM packages are unavailable in Ubuntu repositories, so installation cannot continue."
+        fi
+        warn "apt.llvm.org does not currently list Ubuntu codename '${VERSION_CODENAME}'; skipping optional apt.llvm.org lookup and continuing with fallback resolution."
+        return 1
+    fi
 
     log "Adding apt.llvm.org repository for LLVM ${LLVM_VERSION}"
 
@@ -585,7 +611,11 @@ enable_apt_llvm_repo() {
 
     if ! sudo apt-get update; then
         sudo rm -f "$sources_file"
-        die "Failed to update apt metadata after adding apt.llvm.org for LLVM ${LLVM_VERSION} (Ubuntu: ${VERSION_CODENAME}). Removed ${sources_file}; verify this release/version is supported by apt.llvm.org."
+        if [[ "$required" == "1" ]]; then
+            die "Failed to update apt metadata after adding apt.llvm.org for LLVM ${LLVM_VERSION} (Ubuntu: ${VERSION_CODENAME}). Removed ${sources_file}; verify this release/version is supported by apt.llvm.org."
+        fi
+        warn "apt.llvm.org is not available for Ubuntu ${VERSION_CODENAME}; skipping apt.llvm.org optional lookup and continuing with fallback resolution."
+        return 1
     fi
 
     APT_LLVM_REPO_ENABLED=1
@@ -654,7 +684,7 @@ install_llvm() {
         LLVM_INSTALL_SOURCE="apt.llvm.org"
         log "LLVM ${LLVM_VERSION} is incomplete in Ubuntu repositories"
         warn "Missing required LLVM packages in Ubuntu repos: ${missing_required[*]}"
-        enable_apt_llvm_repo
+        enable_apt_llvm_repo 1
 
         installable=()
         missing_required=()
@@ -686,22 +716,22 @@ install_llvm() {
 
     if ((${#missing_optional_exact[@]} > 0)) && [[ "$APT_LLVM_REPO_ENABLED" == "0" ]]; then
         log "Trying apt.llvm.org for missing optional LLVM packages"
-        enable_apt_llvm_repo
-
-        if [[ "$LLVM_INSTALL_SOURCE" == "ubuntu" ]]; then
-            LLVM_INSTALL_SOURCE="ubuntu+apt.llvm.org(optional)"
-        fi
-
-        missing_optional_exact=()
-        for pkg in "${optional_packages[@]}"; do
-            if apt-cache show "$pkg" >/dev/null 2>&1; then
-                if [[ " ${installable[*]} " != *" $pkg "* ]]; then
-                    installable+=("$pkg")
-                fi
-            else
-                missing_optional_exact+=("$pkg")
+        if enable_apt_llvm_repo 0; then
+            if [[ "$LLVM_INSTALL_SOURCE" == "ubuntu" ]]; then
+                LLVM_INSTALL_SOURCE="ubuntu+apt.llvm.org(optional)"
             fi
-        done
+
+            missing_optional_exact=()
+            for pkg in "${optional_packages[@]}"; do
+                if apt-cache show "$pkg" >/dev/null 2>&1; then
+                    if [[ " ${installable[*]} " != *" $pkg "* ]]; then
+                        installable+=("$pkg")
+                    fi
+                else
+                    missing_optional_exact+=("$pkg")
+                fi
+            done
+        fi
     fi
 
     LLVM_OPTIONAL_FALLBACK_USED=()
