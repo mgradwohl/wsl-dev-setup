@@ -86,6 +86,12 @@ Tool profile bundles:
 
 Check-only mode (`CHECK_ONLY=1`) prints a full action plan and exits before installs or configuration changes.
 
+Runtime output behavior:
+- After apt metadata refresh, the script prints a compact "Resolved LLVM selection" line instead of reprinting the full startup summary.
+- Optional LLVM package availability warnings are grouped to reduce output noise.
+- A final "Warnings recap" is printed at the end when non-fatal warnings occurred.
+- Tool version checks now print explicit status for unavailable commands instead of blank lines.
+
 ---
 
 ## Should you generate `.vscode` defaults?
@@ -152,6 +158,26 @@ ctest --test-dir build --output-on-failure
 
 ---
 
+## Optional CLI utilities worth installing
+
+Yes, installing core terminal utilities is a good idea for daily dev workflows.
+
+Suggested list:
+- `ripgrep` (`rg`) for fast code search.
+- `fd-find` (`fdfind`) for fast file discovery.
+- `bat` for syntax-highlighted file viewing.
+- `fzf` for fuzzy history/file selection.
+- `jq` and `yq` for JSON/YAML manipulation.
+- `tree` for quick directory visualization.
+- `shellcheck` and `shfmt` for shell script quality.
+- `htop` and `btop` for process/resource inspection.
+- `ncdu` for fast disk-usage analysis.
+- `tmux` for persistent terminal sessions.
+
+These are not automatically installed by the script today, but they are a good candidate for a future "productivity" profile bundle.
+
+---
+
 ## Troubleshooting
 
 ### `code` command not found
@@ -185,6 +211,9 @@ INSTALL_WINDOWS_VSCODE=0 ./bootstrap-wsl-dev.sh
 - Added startup config validation and better failure diagnostics
 - Added interactive optional-tool selection
 - Kept VS Code extensions clangd/CMake-focused
+- Added compact resolved-LLVM summary after metadata refresh
+- Grouped optional LLVM warnings and added end-of-run warnings recap
+- Improved version reporting so missing tools are shown explicitly
 
 ---
 

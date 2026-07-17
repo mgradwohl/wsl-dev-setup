@@ -35,6 +35,7 @@ LLVM_INSTALL_SOURCE="undetermined"
 LLVM_VERSION_REQUESTED="$LLVM_VERSION"
 LLVM_VERSION_SOURCE_DETAIL="pending resolution"
 IWYU_INSTALL_CANDIDATE=""
+WARNINGS=()
 
 trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
@@ -43,6 +44,7 @@ log() {
 }
 
 warn() {
+    WARNINGS+=("$*")
     printf '\n\033[1;33mWARNING:\033[0m %s\n' "$*" >&2
 }
 
@@ -279,6 +281,16 @@ Configuration summary:
 EOF
 }
 
+show_resolved_llvm_summary() {
+    CURRENT_STEP="print resolved llvm summary"
+    cat <<EOF
+
+Resolved LLVM selection:
+    - LLVM selected: ${LLVM_VERSION} (${LLVM_VERSION_SOURCE_DETAIL})
+
+EOF
+}
+
 confirm_startup_if_interactive() {
     CURRENT_STEP="confirm startup"
     if is_interactive_terminal; then
@@ -507,6 +519,7 @@ install_llvm() {
 
     local pkg
     local missing_required=()
+    local missing_optional=()
     local installable=()
 
     for pkg in "${required_packages[@]}"; do
@@ -525,9 +538,13 @@ install_llvm() {
             if apt-cache show "$pkg" >/dev/null 2>&1; then
                 installable+=("$pkg")
             else
-                warn "Optional LLVM package not available from Ubuntu repos: $pkg"
+                missing_optional+=("$pkg")
             fi
         done
+
+        if ((${#missing_optional[@]} > 0)); then
+            warn "Optional LLVM packages not available from Ubuntu repos: ${missing_optional[*]}"
+        fi
 
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${installable[@]}"
     else
@@ -555,6 +572,7 @@ install_llvm() {
 
         installable=()
         missing_required=()
+        missing_optional=()
 
         for pkg in "${required_packages[@]}"; do
             if apt-cache show "$pkg" >/dev/null 2>&1; then
@@ -572,9 +590,13 @@ install_llvm() {
             if apt-cache show "$pkg" >/dev/null 2>&1; then
                 installable+=("$pkg")
             else
-                warn "Optional LLVM package not available from configured repos: $pkg"
+                missing_optional+=("$pkg")
             fi
         done
+
+        if ((${#missing_optional[@]} > 0)); then
+            warn "Optional LLVM packages not available from configured repos: ${missing_optional[*]}"
+        fi
 
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${installable[@]}"
     fi
@@ -609,14 +631,23 @@ configure_llvm_alternatives() {
     )
 
     local tool versioned
+    local configured=()
+    local skipped=()
     for tool in "${tools[@]}"; do
         versioned="/usr/bin/${tool}-${LLVM_VERSION}"
         if [[ -x "$versioned" ]]; then
             sudo update-alternatives \
                 --install "/usr/bin/${tool}" "$tool" "$versioned" "$((LLVM_VERSION * 10))"
+            configured+=("$tool")
+        else
+            skipped+=("$tool")
         fi
     done
-    ok "LLVM alternatives configured"
+
+    ok "LLVM alternatives configured (${#configured[@]} tools)"
+    if ((${#skipped[@]} > 0)); then
+        warn "Skipped alternative registration (versioned tool missing): ${skipped[*]}"
+    fi
 }
 
 # Try to detect the Windows username from WSL via cmd.exe for path probing.
@@ -728,8 +759,10 @@ install_vscode_extensions() {
 
     local extension
     for extension in "${extensions[@]}"; do
-        "$code_cmd" --install-extension "$extension" --force \
-            || warn "Could not install VS Code extension: $extension"
+        if ! "$code_cmd" --install-extension "$extension" --force \
+            2> >(grep -Ev 'DEP0169|url\.parse\(\)|trace-deprecation|CVEs are not issued' >&2); then
+            warn "Could not install VS Code extension: $extension"
+        fi
     done
     ok "VS Code extensions step completed"
 }
@@ -831,7 +864,19 @@ show_versions() {
     local item
     for item in "${commands[@]}"; do
         printf '\n$ %s\n' "$item"
-        bash -lc "$item" 2>/dev/null | head -n 3 || true
+        local output
+        if output="$(bash -lc "$item" 2>&1)"; then
+            if [[ -n "$output" ]]; then
+                printf '%s\n' "$output" | head -n 3
+            else
+                printf '(no output)\n'
+            fi
+        else
+            printf 'unavailable\n'
+            if [[ -n "$output" ]]; then
+                printf '%s\n' "$output" | head -n 2
+            fi
+        fi
     done
 
     if command_exists python3.14; then
@@ -867,6 +912,21 @@ Recommended next actions for C++ in WSL:
 EOF
 }
 
+show_warnings_recap() {
+    CURRENT_STEP="show warnings recap"
+    if ((${#WARNINGS[@]} == 0)); then
+        return 0
+    fi
+
+    log "Warnings recap"
+    local index=1
+    local warning
+    for warning in "${WARNINGS[@]}"; do
+        printf '  %d) %s\n' "$index" "$warning"
+        ((index++))
+    done
+}
+
 main() {
     show_startup_banner
     validate_configuration
@@ -881,7 +941,7 @@ main() {
     fi
 
     update_apt_metadata_and_resolve_llvm
-    show_startup_summary
+    show_resolved_llvm_summary
     install_base_packages
     install_optional_packages
     install_tool_profile_bundles
@@ -895,6 +955,7 @@ main() {
     configure_git_and_ccache
     cleanup
     show_versions
+    show_warnings_recap
 }
 
 main "$@"
