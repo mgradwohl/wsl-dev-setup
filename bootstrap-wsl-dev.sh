@@ -41,8 +41,11 @@ LLVM_VERSION_SOURCE_DETAIL="pending resolution"
 IWYU_INSTALL_CANDIDATE=""
 WARNINGS=()
 LLVM_OPTIONAL_MISSING=()
+LLVM_OPTIONAL_FALLBACK_USED=()
+LLVM_OPTIONAL_FALLBACK_REJECTED=()
 LLVM_ALTERNATIVES_CONFIGURED=()
 LLVM_ALTERNATIVES_SKIPPED=()
+APT_LLVM_REPO_ENABLED=0
 
 trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
@@ -493,9 +496,9 @@ Planned actions:
   4) Install tool profile bundles by selection:
      - Performance bundle: $([[ "$INSTALL_PROFILE_PERFORMANCE" == "1" ]] && echo "yes" || echo "no")
      - Reliability bundle: $([[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]] && echo "yes" || echo "no")
-    - Testing bundle: $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
-    - Productivity bundle: $([[ "$INSTALL_PROFILE_PRODUCTIVITY" == "1" ]] && echo "yes" || echo "no")
-  5) Install LLVM/Clang ${LLVM_VERSION} (required package set); fall back to apt.llvm.org if Ubuntu repos are incomplete
+        - Testing bundle: $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
+        - Productivity bundle: $([[ "$INSTALL_PROFILE_PRODUCTIVITY" == "1" ]] && echo "yes" || echo "no")
+  5) Install LLVM/Clang (${LLVM_VERSION_REQUESTED}) required package set; for optional LLVM packages try exact version, then apt.llvm.org exact, then unversioned fallback at least one major behind selected LLVM
   6) Install IWYU if selected and available via candidate resolution
   7) Configure LLVM alternatives
   8) Optionally install Windows VS Code (machine scope) and VS Code extensions
@@ -563,6 +566,56 @@ install_python_314() {
     fi
 }
 
+enable_apt_llvm_repo() {
+    [[ "$APT_LLVM_REPO_ENABLED" == "0" ]] || return 0
+
+    log "Adding apt.llvm.org repository for LLVM ${LLVM_VERSION}"
+
+    local keyring_path="/usr/share/keyrings/llvm-snapshot.gpg"
+    curl --fail --location --silent --show-error \
+        --proto '=https' --tlsv1.2 \
+        --retry 3 --retry-connrefused \
+        https://apt.llvm.org/llvm-snapshot.gpg.key \
+        | sudo gpg --dearmor --yes -o "$keyring_path"
+
+    local sources_file="/etc/apt/sources.list.d/llvm-${LLVM_VERSION}.list"
+    printf 'deb [signed-by=%s] https://apt.llvm.org/%s/ llvm-toolchain-%s-%s main\n' \
+        "$keyring_path" "${VERSION_CODENAME}" "${VERSION_CODENAME}" "${LLVM_VERSION}" \
+        | sudo tee "$sources_file" >/dev/null
+
+    if ! sudo apt-get update; then
+        sudo rm -f "$sources_file"
+        die "Failed to update apt metadata after adding apt.llvm.org for LLVM ${LLVM_VERSION} (Ubuntu: ${VERSION_CODENAME}). Removed ${sources_file}; verify this release/version is supported by apt.llvm.org."
+    fi
+
+    APT_LLVM_REPO_ENABLED=1
+}
+
+apt_package_major() {
+    local package="$1"
+    local version
+    version="$(apt-cache show "$package" 2>/dev/null | awk '/^Version:/{print $2; exit}')"
+    [[ -n "$version" ]] || return 1
+
+    # Strip epoch (for example 1:23.0.0-...) before extracting a major.
+    version="${version#*:}"
+    local major
+    major="$(printf '%s\n' "$version" | grep -Eo '^[0-9]+' || true)"
+    [[ -n "$major" ]] || return 1
+    printf '%s\n' "$major"
+}
+
+llvm_optional_fallback_for() {
+    local versioned_pkg="$1"
+    case "$versioned_pkg" in
+        lld-*) printf '%s\n' "lld" ;;
+        lldb-*) printf '%s\n' "lldb" ;;
+        libc++-*-dev) printf '%s\n' "libc++-dev" ;;
+        libc++abi-*-dev) printf '%s\n' "libc++abi-dev" ;;
+        *) return 1 ;;
+    esac
+}
+
 install_llvm() {
     CURRENT_STEP="install llvm/clang"
     local required_packages=(
@@ -582,10 +635,12 @@ install_llvm() {
         "libc++abi-${LLVM_VERSION}-dev"
     )
 
-    local pkg
+    local pkg fallback_pkg fallback_major
     local missing_required=()
-    local missing_optional=()
+    local missing_optional_exact=()
+    local missing_optional_final=()
     local installable=()
+    local min_fallback_major="$((LLVM_VERSION - 1))"
 
     for pkg in "${required_packages[@]}"; do
         if apt-cache show "$pkg" >/dev/null 2>&1; then
@@ -595,51 +650,14 @@ install_llvm() {
         fi
     done
 
-    if ((${#missing_required[@]} == 0)); then
-        LLVM_INSTALL_SOURCE="ubuntu"
-        log "Installing LLVM/Clang ${LLVM_VERSION} from Ubuntu repositories"
-
-        for pkg in "${optional_packages[@]}"; do
-            if apt-cache show "$pkg" >/dev/null 2>&1; then
-                installable+=("$pkg")
-            else
-                missing_optional+=("$pkg")
-            fi
-        done
-
-        if ((${#missing_optional[@]} > 0)); then
-            warn "Optional LLVM packages not available from Ubuntu repos: ${missing_optional[*]}"
-        fi
-
-        LLVM_OPTIONAL_MISSING=("${missing_optional[@]}")
-
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${installable[@]}"
-    else
+    if ((${#missing_required[@]} > 0)); then
         LLVM_INSTALL_SOURCE="apt.llvm.org"
         log "LLVM ${LLVM_VERSION} is incomplete in Ubuntu repositories"
         warn "Missing required LLVM packages in Ubuntu repos: ${missing_required[*]}"
-        log "Adding apt.llvm.org repository for LLVM ${LLVM_VERSION}"
-
-        local keyring_path="/usr/share/keyrings/llvm-snapshot.gpg"
-        curl --fail --location --silent --show-error \
-            --proto '=https' --tlsv1.2 \
-            --retry 3 --retry-connrefused \
-            https://apt.llvm.org/llvm-snapshot.gpg.key \
-            | sudo gpg --dearmor --yes -o "$keyring_path"
-
-        local sources_file="/etc/apt/sources.list.d/llvm-${LLVM_VERSION}.list"
-        printf 'deb [signed-by=%s] https://apt.llvm.org/%s/ llvm-toolchain-%s-%s main\n' \
-            "$keyring_path" "${VERSION_CODENAME}" "${VERSION_CODENAME}" "${LLVM_VERSION}" \
-            | sudo tee "$sources_file" >/dev/null
-
-        if ! sudo apt-get update; then
-            sudo rm -f "$sources_file"
-            die "Failed to update apt metadata after adding apt.llvm.org for LLVM ${LLVM_VERSION} (Ubuntu: ${VERSION_CODENAME}). Removed ${sources_file}; verify this release/version is supported by apt.llvm.org."
-        fi
+        enable_apt_llvm_repo
 
         installable=()
         missing_required=()
-        missing_optional=()
 
         for pkg in "${required_packages[@]}"; do
             if apt-cache show "$pkg" >/dev/null 2>&1; then
@@ -652,23 +670,78 @@ install_llvm() {
         if ((${#missing_required[@]} > 0)); then
             die "Required LLVM packages are still unavailable after enabling apt.llvm.org: ${missing_required[*]}"
         fi
+    else
+        LLVM_INSTALL_SOURCE="ubuntu"
+        log "Installing LLVM/Clang ${LLVM_VERSION} from Ubuntu repositories"
+    fi
 
-        for pkg in "${optional_packages[@]}"; do
-            if apt-cache show "$pkg" >/dev/null 2>&1; then
-                installable+=("$pkg")
-            else
-                missing_optional+=("$pkg")
-            fi
-        done
+    missing_optional_exact=()
+    for pkg in "${optional_packages[@]}"; do
+        if apt-cache show "$pkg" >/dev/null 2>&1; then
+            installable+=("$pkg")
+        else
+            missing_optional_exact+=("$pkg")
+        fi
+    done
 
-        if ((${#missing_optional[@]} > 0)); then
-            warn "Optional LLVM packages not available from configured repos: ${missing_optional[*]}"
+    if ((${#missing_optional_exact[@]} > 0)) && [[ "$APT_LLVM_REPO_ENABLED" == "0" ]]; then
+        log "Trying apt.llvm.org for missing optional LLVM packages"
+        enable_apt_llvm_repo
+
+        if [[ "$LLVM_INSTALL_SOURCE" == "ubuntu" ]]; then
+            LLVM_INSTALL_SOURCE="ubuntu+apt.llvm.org(optional)"
         fi
 
-        LLVM_OPTIONAL_MISSING=("${missing_optional[@]}")
-
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${installable[@]}"
+        missing_optional_exact=()
+        for pkg in "${optional_packages[@]}"; do
+            if apt-cache show "$pkg" >/dev/null 2>&1; then
+                if [[ " ${installable[*]} " != *" $pkg "* ]]; then
+                    installable+=("$pkg")
+                fi
+            else
+                missing_optional_exact+=("$pkg")
+            fi
+        done
     fi
+
+    LLVM_OPTIONAL_FALLBACK_USED=()
+    LLVM_OPTIONAL_FALLBACK_REJECTED=()
+    missing_optional_final=()
+
+    for pkg in "${missing_optional_exact[@]}"; do
+        if fallback_pkg="$(llvm_optional_fallback_for "$pkg")" && apt-cache show "$fallback_pkg" >/dev/null 2>&1; then
+            fallback_major="$(apt_package_major "$fallback_pkg" || true)"
+            if [[ -n "$fallback_major" ]] && ((fallback_major >= min_fallback_major)); then
+                if [[ " ${installable[*]} " != *" $fallback_pkg "* ]]; then
+                    installable+=("$fallback_pkg")
+                fi
+                LLVM_OPTIONAL_FALLBACK_USED+=("${pkg}->${fallback_pkg}@${fallback_major}")
+            else
+                if [[ -n "$fallback_major" ]]; then
+                    LLVM_OPTIONAL_FALLBACK_REJECTED+=("${pkg}->${fallback_pkg}@${fallback_major}<${min_fallback_major}")
+                else
+                    LLVM_OPTIONAL_FALLBACK_REJECTED+=("${pkg}->${fallback_pkg}@unknown<${min_fallback_major}")
+                fi
+                missing_optional_final+=("$pkg")
+            fi
+        else
+            missing_optional_final+=("$pkg")
+        fi
+    done
+
+    if ((${#LLVM_OPTIONAL_FALLBACK_USED[@]} > 0)); then
+        warn "Using fallback optional LLVM packages: ${LLVM_OPTIONAL_FALLBACK_USED[*]}"
+    fi
+    if ((${#LLVM_OPTIONAL_FALLBACK_REJECTED[@]} > 0)); then
+        warn "Rejected optional LLVM fallbacks below minimum major ${min_fallback_major}: ${LLVM_OPTIONAL_FALLBACK_REJECTED[*]}"
+    fi
+    if ((${#missing_optional_final[@]} > 0)); then
+        warn "Optional LLVM packages unavailable after exact+fallback resolution: ${missing_optional_final[*]}"
+    fi
+
+    LLVM_OPTIONAL_MISSING=("${missing_optional_final[@]}")
+
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${installable[@]}"
     ok "LLVM/Clang ${LLVM_VERSION} installed (${LLVM_INSTALL_SOURCE})"
 }
 
@@ -972,14 +1045,24 @@ show_versions() {
     done
 
     local missing_optional_text="none"
+    local fallback_optional_text="none"
+    local rejected_fallback_text="none"
     local skipped_alt_text="none"
     if ((${#LLVM_OPTIONAL_MISSING[@]} > 0)); then
         missing_optional_text="${LLVM_OPTIONAL_MISSING[*]}"
     fi
+    if ((${#LLVM_OPTIONAL_FALLBACK_USED[@]} > 0)); then
+        fallback_optional_text="${LLVM_OPTIONAL_FALLBACK_USED[*]}"
+    fi
+    if ((${#LLVM_OPTIONAL_FALLBACK_REJECTED[@]} > 0)); then
+        rejected_fallback_text="${LLVM_OPTIONAL_FALLBACK_REJECTED[*]}"
+    fi
     if ((${#LLVM_ALTERNATIVES_SKIPPED[@]} > 0)); then
         skipped_alt_text="${LLVM_ALTERNATIVES_SKIPPED[*]}"
     fi
-    printf '\nToolchain summary: optional LLVM missing [%s]; alternatives configured=%d skipped=%d (%s)\n' \
+    printf '\nToolchain summary: optional LLVM fallback-used [%s]; fallback-rejected [%s]; optional missing [%s]; alternatives configured=%d skipped=%d (%s)\n' \
+        "$fallback_optional_text" \
+        "$rejected_fallback_text" \
         "$missing_optional_text" \
         "${#LLVM_ALTERNATIVES_CONFIGURED[@]}" \
         "${#LLVM_ALTERNATIVES_SKIPPED[@]}" \

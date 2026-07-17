@@ -96,9 +96,10 @@ When `INSTALL_OPTIONAL_TOOLS_PROMPT=1` in an interactive terminal and `INSTALL_V
 Runtime output behavior:
 - After apt metadata refresh, the script prints a compact "Resolved LLVM selection" line instead of reprinting the full startup summary.
 - Optional LLVM package availability warnings are grouped to reduce output noise.
+- Optional LLVM package resolution now uses a tiered strategy: exact version in current repos, then exact version via `apt.llvm.org`, then unversioned fallback packages only when their detected major is at least `(requested_major - 1)`.
 - A final "Warnings recap" is printed at the end when non-fatal warnings occurred.
 - Tool version checks now distinguish non-zero exits from unavailable commands.
-- A one-line toolchain summary is printed near the end (optional LLVM missing + alternatives configured/skipped).
+- A one-line toolchain summary is printed near the end (optional fallback used/rejected/missing + alternatives configured/skipped).
 
 ---
 
@@ -200,7 +201,12 @@ Then reopen Ubuntu and rerun bootstrap if needed.
 
 ### LLVM package issues
 
-Rerun bootstrap. It now validates the full required LLVM package set for the selected major and falls back to `apt.llvm.org` when Ubuntu repositories are incomplete for that major.
+Rerun bootstrap. It validates the full required LLVM package set for the selected major and falls back to `apt.llvm.org` when Ubuntu repositories are incomplete for that major.
+
+For optional LLVM packages (`lld`, `lldb`, `libc++`, `libc++abi`):
+- the script first tries exact versioned names (for example `lld-23`),
+- then tries exact versioned names after enabling `apt.llvm.org`,
+- then tries unversioned fallbacks only if the package major is recent enough (at least requested major minus one).
 
 ### `winget` unavailable
 
