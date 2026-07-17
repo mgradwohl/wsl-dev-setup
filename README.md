@@ -78,6 +78,7 @@ GENERATE_VSCODE_SETTINGS=1 \
 | `INSTALL_PROFILE_PERFORMANCE` | unset | Force install of performance bundle (`1`/`0`) |
 | `INSTALL_PROFILE_RELIABILITY` | unset | Force install of reliability bundle (`1`/`0`) |
 | `INSTALL_PROFILE_TESTING` | unset | Force install of testing bundle (`1`/`0`) |
+| `INSTALL_PROFILE_PRODUCTIVITY` | unset | Force install of productivity CLI bundle (`1`/`0`) |
 | `GENERATE_VSCODE_SETTINGS` | unset | Force generation of `.vscode` defaults (`1`/`0`) |
 
 When `INSTALL_IWYU=1`, the script now tries the best available package candidate for your selected LLVM major (`include-what-you-use-<major>`, then `include-what-you-use`, then `iwyu`). If none are available on your release, it logs a clear warning and continues.
@@ -86,6 +87,7 @@ Tool profile bundles:
 - Performance: `mold`, `hyperfine`, and perf helpers when available.
 - Reliability: `cppcheck`, `bear`, and ELF/debug diagnostics helpers when available.
 - Testing: `lcov`, `gcovr`, `catch2`, and `libgtest-dev` when available.
+- Productivity: `ripgrep`, `fd-find`, `bat`, `fzf`, `yq`, `tree`, `shellcheck`, `shfmt`, `htop`, `btop`, `ncdu`, and `tmux` when available.
 
 Check-only mode (`CHECK_ONLY=1`) prints a full action plan and exits before installs or configuration changes.
 
@@ -180,7 +182,7 @@ Suggested list:
 - `ncdu` for fast disk-usage analysis.
 - `tmux` for persistent terminal sessions.
 
-These are not automatically installed by the script today, but they are a good candidate for a future "productivity" profile bundle.
+Use `INSTALL_PROFILE_PRODUCTIVITY=1` (or answer Yes at startup) to install this set as part of bootstrap.
 
 ---
 
@@ -218,6 +220,7 @@ INSTALL_WINDOWS_VSCODE=0 ./bootstrap-wsl-dev.sh
 - Added interactive optional-tool selection
 - Kept VS Code extensions clangd/CMake-focused
 - Added per-extension runtime prompts for VS Code extension installation
+- Added productivity profile bundle for common CLI developer utilities
 - Added compact resolved-LLVM summary after metadata refresh
 - Grouped optional LLVM warnings and added end-of-run warnings recap
 - Improved version reporting to show non-zero exits vs unavailable commands

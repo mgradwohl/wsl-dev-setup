@@ -31,6 +31,7 @@ INSTALL_PROFILING_TOOLS="${INSTALL_PROFILING_TOOLS:-}"
 INSTALL_PROFILE_PERFORMANCE="${INSTALL_PROFILE_PERFORMANCE:-}"
 INSTALL_PROFILE_RELIABILITY="${INSTALL_PROFILE_RELIABILITY:-}"
 INSTALL_PROFILE_TESTING="${INSTALL_PROFILE_TESTING:-}"
+INSTALL_PROFILE_PRODUCTIVITY="${INSTALL_PROFILE_PRODUCTIVITY:-}"
 CHECK_ONLY="${CHECK_ONLY:-0}"
 
 CURRENT_STEP="startup"
@@ -147,6 +148,7 @@ validate_configuration() {
     validate_bool_or_empty "INSTALL_PROFILE_PERFORMANCE" "$INSTALL_PROFILE_PERFORMANCE"
     validate_bool_or_empty "INSTALL_PROFILE_RELIABILITY" "$INSTALL_PROFILE_RELIABILITY"
     validate_bool_or_empty "INSTALL_PROFILE_TESTING" "$INSTALL_PROFILE_TESTING"
+    validate_bool_or_empty "INSTALL_PROFILE_PRODUCTIVITY" "$INSTALL_PROFILE_PRODUCTIVITY"
 }
 
 require_ubuntu() {
@@ -234,6 +236,9 @@ configure_optional_choices() {
         if [[ -z "$INSTALL_PROFILE_TESTING" ]]; then
             if ask_yes_no "Install Testing bundle (lcov, gcovr, catch2/googletest headers)?" "N"; then INSTALL_PROFILE_TESTING="1"; else INSTALL_PROFILE_TESTING="0"; fi
         fi
+        if [[ -z "$INSTALL_PROFILE_PRODUCTIVITY" ]]; then
+            if ask_yes_no "Install Productivity bundle (ripgrep, fzf, shell tooling, terminal helpers)?" "N"; then INSTALL_PROFILE_PRODUCTIVITY="1"; else INSTALL_PROFILE_PRODUCTIVITY="0"; fi
+        fi
 
         if [[ -z "$GENERATE_VSCODE_SETTINGS" ]]; then
             if ask_yes_no "Generate .vscode/settings.json and .vscode/extensions.json in current directory?" "N"; then GENERATE_VSCODE_SETTINGS="1"; else GENERATE_VSCODE_SETTINGS="0"; fi
@@ -261,6 +266,7 @@ configure_optional_choices() {
     INSTALL_PROFILE_PERFORMANCE="${INSTALL_PROFILE_PERFORMANCE:-0}"
     INSTALL_PROFILE_RELIABILITY="${INSTALL_PROFILE_RELIABILITY:-0}"
     INSTALL_PROFILE_TESTING="${INSTALL_PROFILE_TESTING:-0}"
+    INSTALL_PROFILE_PRODUCTIVITY="${INSTALL_PROFILE_PRODUCTIVITY:-0}"
     GENERATE_VSCODE_SETTINGS="${GENERATE_VSCODE_SETTINGS:-0}"
     if [[ "$INSTALL_VSCODE_EXTENSIONS" == "1" ]]; then
         INSTALL_VSCODE_EXT_CLANGD="${INSTALL_VSCODE_EXT_CLANGD:-1}"
@@ -280,6 +286,7 @@ configure_optional_choices() {
     validate_bool "INSTALL_PROFILE_PERFORMANCE" "$INSTALL_PROFILE_PERFORMANCE"
     validate_bool "INSTALL_PROFILE_RELIABILITY" "$INSTALL_PROFILE_RELIABILITY"
     validate_bool "INSTALL_PROFILE_TESTING" "$INSTALL_PROFILE_TESTING"
+    validate_bool "INSTALL_PROFILE_PRODUCTIVITY" "$INSTALL_PROFILE_PRODUCTIVITY"
     validate_bool "GENERATE_VSCODE_SETTINGS" "$GENERATE_VSCODE_SETTINGS"
     validate_bool "INSTALL_VSCODE_EXT_CLANGD" "$INSTALL_VSCODE_EXT_CLANGD"
     validate_bool "INSTALL_VSCODE_EXT_CMAKE_TOOLS" "$INSTALL_VSCODE_EXT_CMAKE_TOOLS"
@@ -313,7 +320,8 @@ Configuration summary:
   - Install profiling tools: $([[ "$INSTALL_PROFILING_TOOLS" == "1" ]] && echo "yes" || echo "no")
   - Perf bundle:             $([[ "$INSTALL_PROFILE_PERFORMANCE" == "1" ]] && echo "yes" || echo "no")
   - Reliability bundle:      $([[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]] && echo "yes" || echo "no")
-  - Testing bundle:          $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
+    - Testing bundle:          $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
+    - Productivity bundle:     $([[ "$INSTALL_PROFILE_PRODUCTIVITY" == "1" ]] && echo "yes" || echo "no")
 
 EOF
 }
@@ -428,6 +436,22 @@ install_tool_profile_bundles() {
     if [[ "$INSTALL_PROFILE_TESTING" == "1" ]]; then
         requested+=("lcov" "gcovr" "catch2" "libgtest-dev")
     fi
+    if [[ "$INSTALL_PROFILE_PRODUCTIVITY" == "1" ]]; then
+        requested+=(
+            "ripgrep"
+            "fd-find"
+            "bat"
+            "fzf"
+            "yq"
+            "tree"
+            "shellcheck"
+            "shfmt"
+            "htop"
+            "btop"
+            "ncdu"
+            "tmux"
+        )
+    fi
 
     if ((${#requested[@]} == 0)); then
         log "No tool profile bundles selected"
@@ -469,7 +493,8 @@ Planned actions:
   4) Install tool profile bundles by selection:
      - Performance bundle: $([[ "$INSTALL_PROFILE_PERFORMANCE" == "1" ]] && echo "yes" || echo "no")
      - Reliability bundle: $([[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]] && echo "yes" || echo "no")
-     - Testing bundle: $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
+    - Testing bundle: $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
+    - Productivity bundle: $([[ "$INSTALL_PROFILE_PRODUCTIVITY" == "1" ]] && echo "yes" || echo "no")
   5) Install LLVM/Clang ${LLVM_VERSION} (required package set); fall back to apt.llvm.org if Ubuntu repos are incomplete
   6) Install IWYU if selected and available via candidate resolution
   7) Configure LLVM alternatives
