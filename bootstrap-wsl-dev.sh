@@ -21,14 +21,20 @@ INSTALL_VSCODE_EXTENSIONS="${INSTALL_VSCODE_EXTENSIONS:-1}"
 GENERATE_VSCODE_SETTINGS="${GENERATE_VSCODE_SETTINGS:-}"
 INSTALL_OPTIONAL_TOOLS_PROMPT="${INSTALL_OPTIONAL_TOOLS_PROMPT:-1}"
 INSTALL_GIT_LFS="${INSTALL_GIT_LFS:-}"
+INSTALL_GITHUB_CLI="${INSTALL_GITHUB_CLI:-}"
 INSTALL_DOCS_TOOLS="${INSTALL_DOCS_TOOLS:-}"
 INSTALL_IWYU="${INSTALL_IWYU:-}"
 INSTALL_PROFILING_TOOLS="${INSTALL_PROFILING_TOOLS:-}"
+INSTALL_PROFILE_PERFORMANCE="${INSTALL_PROFILE_PERFORMANCE:-}"
+INSTALL_PROFILE_RELIABILITY="${INSTALL_PROFILE_RELIABILITY:-}"
+INSTALL_PROFILE_TESTING="${INSTALL_PROFILE_TESTING:-}"
+CHECK_ONLY="${CHECK_ONLY:-0}"
 
 CURRENT_STEP="startup"
 LLVM_INSTALL_SOURCE="undetermined"
 LLVM_VERSION_REQUESTED="$LLVM_VERSION"
 LLVM_VERSION_SOURCE_DETAIL="pending resolution"
+IWYU_INSTALL_CANDIDATE=""
 
 trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
@@ -119,12 +125,17 @@ validate_configuration() {
     validate_bool "INSTALL_WINDOWS_VSCODE" "$INSTALL_WINDOWS_VSCODE"
     validate_bool "INSTALL_VSCODE_EXTENSIONS" "$INSTALL_VSCODE_EXTENSIONS"
     validate_bool "INSTALL_OPTIONAL_TOOLS_PROMPT" "$INSTALL_OPTIONAL_TOOLS_PROMPT"
+    validate_bool "CHECK_ONLY" "$CHECK_ONLY"
 
     validate_bool_or_empty "GENERATE_VSCODE_SETTINGS" "$GENERATE_VSCODE_SETTINGS"
     validate_bool_or_empty "INSTALL_GIT_LFS" "$INSTALL_GIT_LFS"
+    validate_bool_or_empty "INSTALL_GITHUB_CLI" "$INSTALL_GITHUB_CLI"
     validate_bool_or_empty "INSTALL_DOCS_TOOLS" "$INSTALL_DOCS_TOOLS"
     validate_bool_or_empty "INSTALL_IWYU" "$INSTALL_IWYU"
     validate_bool_or_empty "INSTALL_PROFILING_TOOLS" "$INSTALL_PROFILING_TOOLS"
+    validate_bool_or_empty "INSTALL_PROFILE_PERFORMANCE" "$INSTALL_PROFILE_PERFORMANCE"
+    validate_bool_or_empty "INSTALL_PROFILE_RELIABILITY" "$INSTALL_PROFILE_RELIABILITY"
+    validate_bool_or_empty "INSTALL_PROFILE_TESTING" "$INSTALL_PROFILE_TESTING"
 }
 
 require_ubuntu() {
@@ -133,7 +144,19 @@ require_ubuntu() {
     # shellcheck disable=SC1091
     . /etc/os-release
     [[ "${ID:-}" == "ubuntu" ]] || die "This script supports Ubuntu; detected ${ID:-unknown}."
+    [[ -n "${VERSION_ID:-}" ]] || die "Could not determine Ubuntu VERSION_ID from /etc/os-release."
+    dpkg --compare-versions "$VERSION_ID" ge "24.04" || die "Ubuntu 24.04+ is required; detected ${VERSION_ID}."
     log "Detected Ubuntu ${VERSION_ID:-unknown} (${VERSION_CODENAME:-unknown})"
+}
+
+show_startup_banner() {
+    cat <<'EOF'
+
+============================================================
+  WSL C++ Bootstrap (Clang/LLVM-first)
+============================================================
+
+EOF
 }
 
 update_apt_metadata_and_resolve_llvm() {
@@ -174,6 +197,10 @@ configure_optional_choices() {
             if ask_yes_no "Install Git LFS?" "Y"; then INSTALL_GIT_LFS="1"; else INSTALL_GIT_LFS="0"; fi
         fi
 
+        if [[ -z "$INSTALL_GITHUB_CLI" ]]; then
+            if ask_yes_no "Install GitHub CLI (gh)?" "Y"; then INSTALL_GITHUB_CLI="1"; else INSTALL_GITHUB_CLI="0"; fi
+        fi
+
         if [[ -z "$INSTALL_DOCS_TOOLS" ]]; then
             if ask_yes_no "Install documentation tools (Doxygen + Graphviz)?" "N"; then INSTALL_DOCS_TOOLS="1"; else INSTALL_DOCS_TOOLS="0"; fi
         fi
@@ -186,21 +213,40 @@ configure_optional_choices() {
             if ask_yes_no "Install profiling tools (Valgrind + Heaptrack + gperftools) when available?" "N"; then INSTALL_PROFILING_TOOLS="1"; else INSTALL_PROFILING_TOOLS="0"; fi
         fi
 
+        log "Developer tool bundles"
+        if [[ -z "$INSTALL_PROFILE_PERFORMANCE" ]]; then
+            if ask_yes_no "Install Performance bundle (mold, hyperfine, perf helpers when available)?" "N"; then INSTALL_PROFILE_PERFORMANCE="1"; else INSTALL_PROFILE_PERFORMANCE="0"; fi
+        fi
+        if [[ -z "$INSTALL_PROFILE_RELIABILITY" ]]; then
+            if ask_yes_no "Install Reliability bundle (cppcheck, bear, debuginfod, diagnostics tools)?" "N"; then INSTALL_PROFILE_RELIABILITY="1"; else INSTALL_PROFILE_RELIABILITY="0"; fi
+        fi
+        if [[ -z "$INSTALL_PROFILE_TESTING" ]]; then
+            if ask_yes_no "Install Testing bundle (lcov, gcovr, catch2/googletest headers)?" "N"; then INSTALL_PROFILE_TESTING="1"; else INSTALL_PROFILE_TESTING="0"; fi
+        fi
+
         if [[ -z "$GENERATE_VSCODE_SETTINGS" ]]; then
             if ask_yes_no "Generate .vscode/settings.json and .vscode/extensions.json in current directory?" "N"; then GENERATE_VSCODE_SETTINGS="1"; else GENERATE_VSCODE_SETTINGS="0"; fi
         fi
     fi
 
     INSTALL_GIT_LFS="${INSTALL_GIT_LFS:-0}"
+    INSTALL_GITHUB_CLI="${INSTALL_GITHUB_CLI:-0}"
     INSTALL_DOCS_TOOLS="${INSTALL_DOCS_TOOLS:-0}"
     INSTALL_IWYU="${INSTALL_IWYU:-0}"
     INSTALL_PROFILING_TOOLS="${INSTALL_PROFILING_TOOLS:-0}"
+    INSTALL_PROFILE_PERFORMANCE="${INSTALL_PROFILE_PERFORMANCE:-0}"
+    INSTALL_PROFILE_RELIABILITY="${INSTALL_PROFILE_RELIABILITY:-0}"
+    INSTALL_PROFILE_TESTING="${INSTALL_PROFILE_TESTING:-0}"
     GENERATE_VSCODE_SETTINGS="${GENERATE_VSCODE_SETTINGS:-0}"
 
     validate_bool "INSTALL_GIT_LFS" "$INSTALL_GIT_LFS"
+    validate_bool "INSTALL_GITHUB_CLI" "$INSTALL_GITHUB_CLI"
     validate_bool "INSTALL_DOCS_TOOLS" "$INSTALL_DOCS_TOOLS"
     validate_bool "INSTALL_IWYU" "$INSTALL_IWYU"
     validate_bool "INSTALL_PROFILING_TOOLS" "$INSTALL_PROFILING_TOOLS"
+    validate_bool "INSTALL_PROFILE_PERFORMANCE" "$INSTALL_PROFILE_PERFORMANCE"
+    validate_bool "INSTALL_PROFILE_RELIABILITY" "$INSTALL_PROFILE_RELIABILITY"
+    validate_bool "INSTALL_PROFILE_TESTING" "$INSTALL_PROFILE_TESTING"
     validate_bool "GENERATE_VSCODE_SETTINGS" "$GENERATE_VSCODE_SETTINGS"
 }
 
@@ -220,12 +266,26 @@ Configuration summary:
   - Install Windows VS Code: $([[ "$INSTALL_WINDOWS_VSCODE" == "1" ]] && echo "yes" || echo "no")
   - Install VS Code ext:     $([[ "$INSTALL_VSCODE_EXTENSIONS" == "1" ]] && echo "yes" || echo "no")
   - Generate .vscode files:  $([[ "$GENERATE_VSCODE_SETTINGS" == "1" ]] && echo "yes" || echo "no")
+  - Check-only mode:         $([[ "$CHECK_ONLY" == "1" ]] && echo "yes" || echo "no")
   - Install Git LFS:         $([[ "$INSTALL_GIT_LFS" == "1" ]] && echo "yes" || echo "no")
+  - Install GitHub CLI:      $([[ "$INSTALL_GITHUB_CLI" == "1" ]] && echo "yes" || echo "no")
   - Install docs tools:      $([[ "$INSTALL_DOCS_TOOLS" == "1" ]] && echo "yes" || echo "no")
   - Install IWYU:            $([[ "$INSTALL_IWYU" == "1" ]] && echo "yes" || echo "no")
   - Install profiling tools: $([[ "$INSTALL_PROFILING_TOOLS" == "1" ]] && echo "yes" || echo "no")
+  - Perf bundle:             $([[ "$INSTALL_PROFILE_PERFORMANCE" == "1" ]] && echo "yes" || echo "no")
+  - Reliability bundle:      $([[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]] && echo "yes" || echo "no")
+  - Testing bundle:          $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
 
 EOF
+}
+
+confirm_startup_if_interactive() {
+    CURRENT_STEP="confirm startup"
+    if is_interactive_terminal; then
+        if ! ask_yes_no "Proceed with bootstrap using the configuration above?" "Y"; then
+            die "Bootstrap cancelled by user."
+        fi
+    fi
 }
 
 install_base_packages() {
@@ -270,11 +330,11 @@ install_optional_packages() {
     if [[ "$INSTALL_GIT_LFS" == "1" ]]; then
         requested+=("git-lfs")
     fi
+    if [[ "$INSTALL_GITHUB_CLI" == "1" ]]; then
+        requested+=("gh")
+    fi
     if [[ "$INSTALL_DOCS_TOOLS" == "1" ]]; then
         requested+=("doxygen" "graphviz")
-    fi
-    if [[ "$INSTALL_IWYU" == "1" ]]; then
-        requested+=("include-what-you-use")
     fi
     if [[ "$INSTALL_PROFILING_TOOLS" == "1" ]]; then
         requested+=("valgrind" "heaptrack" "libgoogle-perftools-dev")
@@ -304,6 +364,113 @@ install_optional_packages() {
     fi
 }
 
+install_tool_profile_bundles() {
+    CURRENT_STEP="install tool profile bundles"
+    local requested=()
+    local installable=()
+    local package
+
+    if [[ "$INSTALL_PROFILE_PERFORMANCE" == "1" ]]; then
+        requested+=("mold" "hyperfine" "linux-tools-common" "linux-tools-generic")
+    fi
+    if [[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]]; then
+        requested+=("cppcheck" "bear" "elfutils" "debuginfod")
+    fi
+    if [[ "$INSTALL_PROFILE_TESTING" == "1" ]]; then
+        requested+=("lcov" "gcovr" "catch2" "libgtest-dev")
+    fi
+
+    if ((${#requested[@]} == 0)); then
+        log "No tool profile bundles selected"
+        return 0
+    fi
+
+    for package in "${requested[@]}"; do
+        if apt-cache show "$package" >/dev/null 2>&1; then
+            installable+=("$package")
+        else
+            warn "Tool profile package not available on this release: $package"
+        fi
+    done
+
+    if ((${#installable[@]} > 0)); then
+        log "Installing selected tool profile bundles"
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${installable[@]}"
+        ok "Tool profile bundles installed"
+    fi
+}
+
+show_check_only_plan() {
+    CURRENT_STEP="show check-only plan"
+
+    cat <<EOF
+
+CHECK-ONLY PLAN
+
+No package installs or system changes will be made.
+
+Planned actions:
+  1) Update apt metadata and resolve LLVM major from request: ${LLVM_VERSION_REQUESTED}
+  2) Install base packages: build-essential, cmake, ninja-build, ccache, gdb, git, python3 toolchain, and helpers
+  3) Install optional packages by selection:
+     - Git LFS: $([[ "$INSTALL_GIT_LFS" == "1" ]] && echo "yes" || echo "no")
+     - GitHub CLI: $([[ "$INSTALL_GITHUB_CLI" == "1" ]] && echo "yes" || echo "no")
+     - Docs tools: $([[ "$INSTALL_DOCS_TOOLS" == "1" ]] && echo "yes" || echo "no")
+     - Profiling tools: $([[ "$INSTALL_PROFILING_TOOLS" == "1" ]] && echo "yes" || echo "no")
+  4) Install tool profile bundles by selection:
+     - Performance bundle: $([[ "$INSTALL_PROFILE_PERFORMANCE" == "1" ]] && echo "yes" || echo "no")
+     - Reliability bundle: $([[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]] && echo "yes" || echo "no")
+     - Testing bundle: $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
+  5) Install LLVM/Clang ${LLVM_VERSION} (required package set); fall back to apt.llvm.org if Ubuntu repos are incomplete
+  6) Install IWYU if selected and available via candidate resolution
+  7) Configure LLVM alternatives
+  8) Optionally install Windows VS Code (machine scope) and VS Code extensions
+  9) Optionally generate .vscode defaults in current directory
+  10) Configure git + ccache defaults and show versions
+
+To run for real, set CHECK_ONLY=0 (or unset it) and rerun.
+
+EOF
+}
+
+configure_iwyu_candidate() {
+    CURRENT_STEP="resolve iwyu package candidate"
+    [[ "$INSTALL_IWYU" == "1" ]] || return 0
+
+    local candidate
+    local candidates=(
+        "include-what-you-use-${LLVM_VERSION}"
+        "include-what-you-use"
+        "iwyu"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        if apt-cache show "$candidate" >/dev/null 2>&1; then
+            IWYU_INSTALL_CANDIDATE="$candidate"
+            return 0
+        fi
+    done
+
+    IWYU_INSTALL_CANDIDATE=""
+}
+
+install_iwyu_if_selected() {
+    CURRENT_STEP="install include-what-you-use"
+    [[ "$INSTALL_IWYU" == "1" ]] || return 0
+
+    configure_iwyu_candidate
+
+    if [[ -z "$IWYU_INSTALL_CANDIDATE" ]]; then
+        warn "IWYU was requested, but no package candidate is available on this release (tried include-what-you-use-${LLVM_VERSION}, include-what-you-use, iwyu)."
+        warn "Skipping IWYU installation."
+        return 0
+    fi
+
+    log "Installing IWYU package: ${IWYU_INSTALL_CANDIDATE}"
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$IWYU_INSTALL_CANDIDATE"
+    ok "IWYU installed (${IWYU_INSTALL_CANDIDATE})"
+}
+
 install_python_314() {
     CURRENT_STEP="install python 3.14 (best effort)"
     if apt-cache show python3.14 >/dev/null 2>&1; then
@@ -321,27 +488,52 @@ install_python_314() {
 
 install_llvm() {
     CURRENT_STEP="install llvm/clang"
-    local packages=(
+    local required_packages=(
         "clang-${LLVM_VERSION}"
         "clangd-${LLVM_VERSION}"
         "clang-format-${LLVM_VERSION}"
         "clang-tidy-${LLVM_VERSION}"
         "clang-tools-${LLVM_VERSION}"
-        "lld-${LLVM_VERSION}"
-        "lldb-${LLVM_VERSION}"
         "llvm-${LLVM_VERSION}"
         "llvm-${LLVM_VERSION}-dev"
+    )
+
+    local optional_packages=(
+        "lld-${LLVM_VERSION}"
+        "lldb-${LLVM_VERSION}"
         "libc++-${LLVM_VERSION}-dev"
         "libc++abi-${LLVM_VERSION}-dev"
     )
 
-    if apt-cache show "clang-${LLVM_VERSION}" >/dev/null 2>&1; then
+    local pkg
+    local missing_required=()
+    local installable=()
+
+    for pkg in "${required_packages[@]}"; do
+        if apt-cache show "$pkg" >/dev/null 2>&1; then
+            installable+=("$pkg")
+        else
+            missing_required+=("$pkg")
+        fi
+    done
+
+    if ((${#missing_required[@]} == 0)); then
         LLVM_INSTALL_SOURCE="ubuntu"
         log "Installing LLVM/Clang ${LLVM_VERSION} from Ubuntu repositories"
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+
+        for pkg in "${optional_packages[@]}"; do
+            if apt-cache show "$pkg" >/dev/null 2>&1; then
+                installable+=("$pkg")
+            else
+                warn "Optional LLVM package not available from Ubuntu repos: $pkg"
+            fi
+        done
+
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${installable[@]}"
     else
         LLVM_INSTALL_SOURCE="apt.llvm.org"
-        log "LLVM ${LLVM_VERSION} is not in the configured Ubuntu repositories"
+        log "LLVM ${LLVM_VERSION} is incomplete in Ubuntu repositories"
+        warn "Missing required LLVM packages in Ubuntu repos: ${missing_required[*]}"
         log "Adding apt.llvm.org repository for LLVM ${LLVM_VERSION}"
 
         local keyring_path="/usr/share/keyrings/llvm-snapshot.gpg"
@@ -360,16 +552,30 @@ install_llvm() {
             sudo rm -f "$sources_file"
             die "Failed to update apt metadata after adding apt.llvm.org for LLVM ${LLVM_VERSION} (Ubuntu: ${VERSION_CODENAME}). Removed ${sources_file}; verify this release/version is supported by apt.llvm.org."
         fi
-        local installable=()
-        local pkg
-        for pkg in "${packages[@]}"; do
+
+        installable=()
+        missing_required=()
+
+        for pkg in "${required_packages[@]}"; do
             if apt-cache show "$pkg" >/dev/null 2>&1; then
                 installable+=("$pkg")
             else
-                warn "LLVM package not available from configured repos: $pkg"
+                missing_required+=("$pkg")
             fi
         done
-        ((${#installable[@]} > 0)) || die "No installable LLVM packages found for LLVM_VERSION=${LLVM_VERSION}."
+
+        if ((${#missing_required[@]} > 0)); then
+            die "Required LLVM packages are still unavailable after enabling apt.llvm.org: ${missing_required[*]}"
+        fi
+
+        for pkg in "${optional_packages[@]}"; do
+            if apt-cache show "$pkg" >/dev/null 2>&1; then
+                installable+=("$pkg")
+            else
+                warn "Optional LLVM package not available from configured repos: $pkg"
+            fi
+        done
+
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${installable[@]}"
     fi
     ok "LLVM/Clang ${LLVM_VERSION} installed (${LLVM_INSTALL_SOURCE})"
@@ -456,7 +662,7 @@ install_windows_vscode() {
 
     log "Installing Windows VS Code with winget"
     powershell.exe -NoProfile -NonInteractive -Command \
-        'winget install --id Microsoft.VisualStudioCode --exact --scope machine --accept-package-agreements --accept-source-agreements' \
+        'winget install --id Microsoft.VisualStudioCode --exact --scope machine --disable-interactivity --accept-package-agreements --accept-source-agreements' \
         || warn "winget could not install VS Code. You may need to run the script again from an elevated Windows terminal."
 
     log "Installing the Windows VS Code WSL extension"
@@ -662,15 +868,26 @@ EOF
 }
 
 main() {
+    show_startup_banner
     validate_configuration
     require_ubuntu
-    update_apt_metadata_and_resolve_llvm
     configure_optional_choices
+    show_startup_summary
+    confirm_startup_if_interactive
+
+    if [[ "$CHECK_ONLY" == "1" ]]; then
+        show_check_only_plan
+        return 0
+    fi
+
+    update_apt_metadata_and_resolve_llvm
     show_startup_summary
     install_base_packages
     install_optional_packages
+    install_tool_profile_bundles
     install_python_314
     install_llvm
+    install_iwyu_if_selected
     configure_llvm_alternatives
     install_windows_vscode
     install_vscode_extensions

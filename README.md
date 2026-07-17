@@ -8,7 +8,7 @@ Bootstrap a modern **C++ in WSL** environment with a **clang/clangd-first** work
 - LLVM/Clang toolchain with default policy: **latest available major >= 23** from configured APT repos; falls back to `apt.llvm.org` when the selected version is not in Ubuntu repos
 - `update-alternatives` registration so `clang`, `clang++`, `clangd`, `clang-tidy`, etc. resolve to the selected LLVM major
 - VS Code setup flow for WSL (optional Windows install + optional extension install)
-- Interactive optional-tool selection at startup
+- Interactive optional-tool selection at startup (all prompts are collected before package installs begin)
 - Optional generation of `.vscode/settings.json` + `.vscode/extensions.json`
 - Safe reruns (idempotent design)
 
@@ -43,10 +43,15 @@ Use env vars to skip prompts and force choices:
 
 ```bash
 INSTALL_OPTIONAL_TOOLS_PROMPT=0 \
+CHECK_ONLY=1 \
 INSTALL_GIT_LFS=1 \
+INSTALL_GITHUB_CLI=1 \
 INSTALL_DOCS_TOOLS=0 \
 INSTALL_IWYU=1 \
 INSTALL_PROFILING_TOOLS=0 \
+INSTALL_PROFILE_PERFORMANCE=1 \
+INSTALL_PROFILE_RELIABILITY=1 \
+INSTALL_PROFILE_TESTING=1 \
 GENERATE_VSCODE_SETTINGS=1 \
 ./bootstrap-wsl-dev.sh
 ```
@@ -61,11 +66,25 @@ GENERATE_VSCODE_SETTINGS=1 \
 | `INSTALL_WINDOWS_VSCODE` | `1` | Install Windows VS Code through winget when in WSL |
 | `INSTALL_VSCODE_EXTENSIONS` | `1` | Install recommended clangd/CMake extensions |
 | `INSTALL_OPTIONAL_TOOLS_PROMPT` | `1` | Ask for optional tool groups at startup (interactive terminals) |
+| `CHECK_ONLY` | `0` | Print a complete installation plan and exit without making install/config changes (`1`/`0`) |
 | `INSTALL_GIT_LFS` | unset | Force Git LFS install (`1`/`0`) |
+| `INSTALL_GITHUB_CLI` | unset | Force GitHub CLI (`gh`) install (`1`/`0`) |
 | `INSTALL_DOCS_TOOLS` | unset | Force Doxygen + Graphviz install (`1`/`0`) |
 | `INSTALL_IWYU` | unset | Force Include-What-You-Use install (`1`/`0`) |
 | `INSTALL_PROFILING_TOOLS` | unset | Force Valgrind + Heaptrack + gperftools install (`1`/`0`) |
+| `INSTALL_PROFILE_PERFORMANCE` | unset | Force install of performance bundle (`1`/`0`) |
+| `INSTALL_PROFILE_RELIABILITY` | unset | Force install of reliability bundle (`1`/`0`) |
+| `INSTALL_PROFILE_TESTING` | unset | Force install of testing bundle (`1`/`0`) |
 | `GENERATE_VSCODE_SETTINGS` | unset | Force generation of `.vscode` defaults (`1`/`0`) |
+
+When `INSTALL_IWYU=1`, the script now tries the best available package candidate for your selected LLVM major (`include-what-you-use-<major>`, then `include-what-you-use`, then `iwyu`). If none are available on your release, it logs a clear warning and continues.
+
+Tool profile bundles:
+- Performance: `mold`, `hyperfine`, and perf helpers when available.
+- Reliability: `cppcheck`, `bear`, and ELF/debug diagnostics helpers when available.
+- Testing: `lcov`, `gcovr`, `catch2`, and `libgtest-dev` when available.
+
+Check-only mode (`CHECK_ONLY=1`) prints a full action plan and exits before installs or configuration changes.
 
 ---
 
@@ -147,7 +166,7 @@ Then reopen Ubuntu and rerun bootstrap if needed.
 
 ### LLVM package issues
 
-Rerun bootstrap. It re-checks package availability and uses `apt.llvm.org` when needed.
+Rerun bootstrap. It now validates the full required LLVM package set for the selected major and falls back to `apt.llvm.org` when Ubuntu repositories are incomplete for that major.
 
 ### `winget` unavailable
 
