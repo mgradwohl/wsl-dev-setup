@@ -22,6 +22,7 @@ GITHUB_CLI_APT_KEY_FINGERPRINTS=(
     "2C6106201985B60E6C7AC87323F3D4EA75716059"
     "7F38BBB59D064DBCB3D84D725612B36462313325"
 )
+COPILOT_TOOLS_BUNDLE_LABEL="git-delta, universal-ctags, entr, cloc, sqlite3, direnv, pipx, zsh, bash-completion"
 INSTALL_WINDOWS_VSCODE="${INSTALL_WINDOWS_VSCODE:-1}"
 INSTALL_VSCODE_EXTENSIONS="${INSTALL_VSCODE_EXTENSIONS:-1}"
 INSTALL_VSCODE_EXT_CLANGD="${INSTALL_VSCODE_EXT_CLANGD:-}"
@@ -255,7 +256,7 @@ configure_optional_choices() {
             if ask_yes_no "Install Productivity bundle (ripgrep, fzf, shell tooling, terminal helpers)?" "N"; then INSTALL_PROFILE_PRODUCTIVITY="1"; else INSTALL_PROFILE_PRODUCTIVITY="0"; fi
         fi
         if [[ -z "$INSTALL_COPILOT_TOOLS" ]]; then
-            if ask_yes_no "Install common Copilot tools (git-delta, universal-ctags, entr, cloc, sqlite3, direnv, pipx, zsh, bash-completion)?" "N"; then INSTALL_COPILOT_TOOLS="1"; else INSTALL_COPILOT_TOOLS="0"; fi
+            if ask_yes_no "Install common Copilot tools (${COPILOT_TOOLS_BUNDLE_LABEL})?" "N"; then INSTALL_COPILOT_TOOLS="1"; else INSTALL_COPILOT_TOOLS="0"; fi
         fi
 
         if [[ -z "$GENERATE_VSCODE_SETTINGS" ]]; then
@@ -598,8 +599,15 @@ install_copilot_tools() {
     fi
 
     if command_exists gh; then
+        local gh_auth_status=0
         local gh_extensions
         if timeout "${gh_auth_timeout_seconds}s" gh auth status >/dev/null 2>&1; then
+            gh_auth_status=0
+        else
+            gh_auth_status=$?
+        fi
+
+        if [[ "$gh_auth_status" -eq 0 ]]; then
             if gh_extensions="$(timeout "${gh_auth_timeout_seconds}s" gh extension list 2>/dev/null)"; then
                 if ! printf '%s\n' "$gh_extensions" | awk '{print $1}' | grep -qx 'github/gh-copilot'; then
                     log "Installing GitHub Copilot CLI extension for gh"
@@ -612,13 +620,10 @@ install_copilot_tools() {
             else
                 warn "Could not query gh extensions automatically; skipping gh-copilot extension installation."
             fi
+        elif [[ "$gh_auth_status" -eq 124 ]]; then
+            warn "Timed out while checking GitHub CLI authentication; skipping gh-copilot extension installation."
         else
-            local gh_auth_status=$?
-            if [[ "$gh_auth_status" -eq 124 ]]; then
-                warn "Timed out while checking GitHub CLI authentication; skipping gh-copilot extension installation."
-            else
-                warn "GitHub CLI is not authenticated; skipping gh-copilot extension installation."
-            fi
+            warn "GitHub CLI is not authenticated; skipping gh-copilot extension installation."
         fi
     else
         warn "GitHub CLI is not installed; skipping gh-copilot extension installation."
@@ -649,7 +654,7 @@ Planned actions:
       - Productivity bundle: $([[ "$INSTALL_PROFILE_PRODUCTIVITY" == "1" ]] && echo "yes" || echo "no")
   5) Install common Copilot tools bundle by selection:
      - Copilot tools bundle: $([[ "$INSTALL_COPILOT_TOOLS" == "1" ]] && echo "yes" || echo "no")
-     - Includes: git-delta, universal-ctags, entr, cloc, sqlite3, direnv, pipx, zsh, bash-completion
+     - Includes: ${COPILOT_TOOLS_BUNDLE_LABEL}
      - Optional add-on: gh-copilot extension when gh is installed
   6) Install LLVM/Clang (${LLVM_VERSION_REQUESTED}) required package set; for optional LLVM packages try exact version, then apt.llvm.org exact, then unversioned fallback at least one major behind selected LLVM
   7) Install IWYU if selected and available via candidate resolution
