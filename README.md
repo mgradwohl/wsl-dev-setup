@@ -66,6 +66,10 @@ Current channel mapping on `apt.llvm.org` is:
 - stable = latest released LLVM major
 - nightly = unversioned `llvm-toolchain-<codename>` repo that tracks trunk
 
+Example naming on Ubuntu 24.04 (`noble`):
+- stable repo: `llvm-toolchain-noble-<stable-major>` such as `llvm-toolchain-noble-21`
+- nightly repo: `llvm-toolchain-noble`
+
 ---
 
 ## Non-interactive usage
