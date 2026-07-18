@@ -13,6 +13,7 @@ set -Eeuo pipefail
 
 TARGET_CHANNEL="${TARGET_CHANNEL:-}"
 CHECK_ONLY="${CHECK_ONLY:-0}"
+MAX_SUPPORTED_LLVM_MAJOR=999
 
 CURRENT_STEP="startup"
 VERSION_CODENAME=""
@@ -457,7 +458,7 @@ configure_llvm_alternatives() {
     CURRENT_STEP="configure llvm alternatives"
     log "Registering LLVM ${TARGET_MAJOR} as the default toolchain"
     [[ "$TARGET_MAJOR" =~ ^[0-9]+$ ]] || die "TARGET_MAJOR must be numeric before configuring update-alternatives."
-    ((TARGET_MAJOR <= 999)) || die "TARGET_MAJOR is unexpectedly large for update-alternatives priority calculation: ${TARGET_MAJOR}"
+    ((TARGET_MAJOR <= MAX_SUPPORTED_LLVM_MAJOR)) || die "TARGET_MAJOR is unexpectedly large for update-alternatives priority calculation: ${TARGET_MAJOR}"
 
     # Some entries below come from optional packages, so versioned binaries may
     # legitimately be absent on a given channel or Ubuntu release.

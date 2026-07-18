@@ -60,7 +60,7 @@ What it does:
 - tracks the latest stable release from `apt.llvm.org/llvm.sh`
 - tracks the current nightly trunk major from `apt.llvm.org`
 - reports whether each channel is installed, partially installed, or has updates available
-- installs or updates the selected channel and repoints `update-alternatives`
+- installs or updates the selected channel and updates `update-alternatives`
 
 Current channel mapping on `apt.llvm.org` is:
 - stable = latest released LLVM major
