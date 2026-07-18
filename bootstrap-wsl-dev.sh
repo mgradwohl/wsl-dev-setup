@@ -583,9 +583,9 @@ Planned actions:
      - Profiling tools: $([[ "$INSTALL_PROFILING_TOOLS" == "1" ]] && echo "yes" || echo "no")
   4) Install tool profile bundles by selection:
      - Performance bundle: $([[ "$INSTALL_PROFILE_PERFORMANCE" == "1" ]] && echo "yes" || echo "no")
-      - Reliability bundle: $([[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]] && echo "yes" || echo "no")
-      - Testing bundle: $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
-      - Productivity bundle: $([[ "$INSTALL_PROFILE_PRODUCTIVITY" == "1" ]] && echo "yes" || echo "no")
+     - Reliability bundle: $([[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]] && echo "yes" || echo "no")
+     - Testing bundle: $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
+     - Productivity bundle: $([[ "$INSTALL_PROFILE_PRODUCTIVITY" == "1" ]] && echo "yes" || echo "no")
   5) Install common Copilot tools bundle by selection:
      - Copilot tools bundle: $([[ "$INSTALL_COPILOT_TOOLS" == "1" ]] && echo "yes" || echo "no")
      - Includes: ${COPILOT_TOOLS_BUNDLE_LABEL}
