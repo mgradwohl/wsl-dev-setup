@@ -116,7 +116,7 @@ GENERATE_VSCODE_SETTINGS=1 \
 | `INSTALL_PROFILE_PRODUCTIVITY` | unset | Force install of productivity CLI bundle (`1`/`0`) |
 | `GENERATE_VSCODE_SETTINGS` | unset | Force generation of `.vscode` defaults (`1`/`0`) |
 | `TARGET_CHANNEL` | unset | For `switch-llvm-channel.sh`: force `stable` or `nightly` instead of prompting |
-| `CHECK_ONLY` | `0` | For `switch-llvm-channel.sh`: configure apt.llvm.org repos, refresh metadata, print channel state/planned action, then exit before package install and `update-alternatives` changes |
+| `CHECK_ONLY` | `0` | For `switch-llvm-channel.sh`: configure apt.llvm.org repos, refresh metadata, print channel state/planned action, then exit before `apt-get install` and `update-alternatives` changes |
 
 When `INSTALL_IWYU=1`, the script now tries the best available package candidate for your selected LLVM major (`include-what-you-use-<major>`, then `include-what-you-use`, then `iwyu`). If none are available on your release, it logs a clear warning and continues.
 
