@@ -14,7 +14,8 @@ set -Eeuo pipefail
 TARGET_CHANNEL="${TARGET_CHANNEL:-}"
 CHECK_ONLY="${CHECK_ONLY:-0}"
 # Guardrail for obviously bad parse results before computing alternatives
-# priorities from the LLVM major version.
+# priorities from the LLVM major version; 999 keeps priorities bounded while
+# remaining far above any practical LLVM major.
 MAX_SUPPORTED_LLVM_MAJOR=999
 LLVM_APT_GPG_FINGERPRINT="6084F3CF814B57C1CF12EFD515CF4D18AF4F7421"
 
@@ -225,7 +226,7 @@ ensure_apt_llvm_keyring() {
     )"
     if [[ "$actual_fingerprint" != "$LLVM_APT_GPG_FINGERPRINT" ]]; then
         rm -f "$tmp_keyring"
-        die "Unexpected apt.llvm.org key fingerprint: ${actual_fingerprint:-missing}"
+        die "Unexpected apt.llvm.org key fingerprint: expected ${LLVM_APT_GPG_FINGERPRINT}, got ${actual_fingerprint:-missing}"
     fi
     sudo install -o root -g root -m 0644 "$tmp_keyring" "$keyring_path"
     rm -f "$tmp_keyring"
