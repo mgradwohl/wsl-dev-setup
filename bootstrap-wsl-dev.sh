@@ -485,7 +485,7 @@ install_tool_profile_bundles() {
 }
 
 install_copilot_tools() {
-    CURRENT_STEP="install common copilot tools"
+    CURRENT_STEP="install common Copilot tools"
     [[ "$INSTALL_COPILOT_TOOLS" == "1" ]] || return 0
 
     local requested=(
@@ -529,13 +529,22 @@ install_copilot_tools() {
     fi
 
     if command_exists gh; then
-        if ! gh extension list 2>/dev/null | awk '{print $1}' | grep -qx 'github/gh-copilot'; then
-            log "Installing GitHub Copilot CLI extension for gh"
-            if gh extension install github/gh-copilot; then
-                ok "Installed gh-copilot extension"
+        local gh_extensions
+        if timeout 15s gh auth status >/dev/null 2>&1; then
+            if gh_extensions="$(timeout 15s gh extension list 2>/dev/null)"; then
+                if ! printf '%s\n' "$gh_extensions" | awk '{print $1}' | grep -qx 'github/gh-copilot'; then
+                    log "Installing GitHub Copilot CLI extension for gh"
+                    if timeout 60s gh extension install github/gh-copilot; then
+                        ok "Installed gh-copilot extension"
+                    else
+                        warn "Could not install gh-copilot extension automatically."
+                    fi
+                fi
             else
-                warn "Could not install gh-copilot extension automatically."
+                warn "Could not query gh extensions automatically; skipping gh-copilot extension installation."
             fi
+        else
+            warn "GitHub CLI is not authenticated; skipping gh-copilot extension installation."
         fi
     else
         warn "GitHub CLI is not installed; skipping gh-copilot extension installation."
