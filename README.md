@@ -55,20 +55,20 @@ CHECK_ONLY=1 TARGET_CHANNEL=nightly ./switch-llvm-channel.sh
 ```
 
 What it does:
-- detects the current default `clang` target and classifies it as stable, nightly, or custom
-- refreshes `apt` metadata before checking either channel
-- tracks the latest stable release from `apt.llvm.org/llvm.sh`
-- tracks the current nightly trunk major from `apt.llvm.org`
-- reports whether each channel is installed, partially installed, or has updates available
-- installs or updates the selected channel and updates `update-alternatives`
+- Detects the current default `clang` target and classifies it as stable, nightly, or custom
+- Refreshes `apt` metadata before checking either channel
+- Tracks the latest stable release from `apt.llvm.org/llvm.sh`
+- Tracks the current nightly trunk major from `apt.llvm.org`
+- Reports whether each channel is installed, partially installed, or has updates available
+- Installs or updates the selected channel and updates `update-alternatives`
 
 Current channel mapping on `apt.llvm.org` is:
 - stable = latest released LLVM major
 - nightly = unversioned `llvm-toolchain-<codename>` repo that tracks trunk
 
 Example naming on Ubuntu 24.04 (`noble`):
-- stable repo: `llvm-toolchain-noble-<stable-major>` such as `llvm-toolchain-noble-21`
-- nightly repo: `llvm-toolchain-noble`
+- Stable repo: `llvm-toolchain-noble-<stable-major>` such as `llvm-toolchain-noble-21`
+- Nightly repo: `llvm-toolchain-noble`
 
 ---
 
