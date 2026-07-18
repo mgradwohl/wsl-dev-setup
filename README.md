@@ -204,6 +204,7 @@ Use `INSTALL_COPILOT_TOOLS=1` (or answer Yes at startup) to install a bundle of 
 - `zsh` and `bash-completion` for improved shell/completion support
 
 If `gh` is installed and authenticated, the bootstrap also attempts to install the official `gh-copilot` extension.
+The script uses a 15-second timeout when checking `gh` authentication and extension state, and a 60-second timeout when attempting the extension install, so slow or blocked networks may cause this step to be skipped with a warning.
 
 Post-install behavior:
 - configures `git-delta` as the default Git pager
