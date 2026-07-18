@@ -552,7 +552,7 @@ install_copilot_tools() {
 
         if [[ "$gh_auth_status" -eq 0 ]]; then
             if gh_extensions="$(timeout "${GH_COPILOT_QUERY_TIMEOUT_SECONDS}s" gh extension list 2>/dev/null)"; then
-                if ! printf '%s\n' "$gh_extensions" | grep -q '^github/gh-copilot\([[:space:]]\|$\)'; then
+                if ! printf '%s\n' "$gh_extensions" | grep -Eq '(^|[[:space:]])github/gh-copilot([[:space:]]|$)'; then
                     log "Installing GitHub Copilot CLI extension for gh"
                     if timeout "${GH_COPILOT_INSTALL_TIMEOUT_SECONDS}s" gh extension install github/gh-copilot; then
                         ok "Installed gh-copilot extension"
