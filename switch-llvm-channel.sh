@@ -163,6 +163,8 @@ resolve_channel_versions() {
     })"
 
     if [[ -z "$LLVM_NIGHTLY_MAJOR" ]]; then
+        # Fallback for the apt.llvm.org overview sentence that lists
+        # stable, qualification, and development majors inline.
         LLVM_NIGHTLY_MAJOR="$({
             printf '%s\n' "$APT_LLVM_PAGE" \
                 | sed -n 's/.*currently \([0-9][0-9]*\), \([0-9][0-9]*\) and \([0-9][0-9]*\).*/\1\n\2\n\3/p' \
@@ -449,6 +451,8 @@ configure_llvm_alternatives() {
     CURRENT_STEP="configure llvm alternatives"
     log "Registering LLVM ${TARGET_MAJOR} as the default toolchain"
 
+    # Some entries below come from optional packages, so versioned binaries may
+    # legitimately be absent on a given channel or Ubuntu release.
     local tools=(
         clang
         clang++
@@ -477,6 +481,8 @@ configure_llvm_alternatives() {
     for tool in "${tools[@]}"; do
         versioned="/usr/bin/${tool}-${TARGET_MAJOR}"
         if [[ -x "$versioned" ]]; then
+            # Keep priorities monotonic by major version so newer LLVM releases
+            # naturally win automatic selection when multiple versions exist.
             sudo update-alternatives --install "/usr/bin/${tool}" "$tool" "$versioned" "$((TARGET_MAJOR * 10))"
             sudo update-alternatives --set "$tool" "$versioned"
         fi
