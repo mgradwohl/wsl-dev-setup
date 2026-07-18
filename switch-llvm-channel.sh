@@ -13,6 +13,8 @@ set -Eeuo pipefail
 
 TARGET_CHANNEL="${TARGET_CHANNEL:-}"
 CHECK_ONLY="${CHECK_ONLY:-0}"
+# Guardrail for obviously bad parse results before computing alternatives
+# priorities from the LLVM major version.
 MAX_SUPPORTED_LLVM_MAJOR=999
 
 CURRENT_STEP="startup"
@@ -87,6 +89,7 @@ ask_channel() {
 
     while true; do
         if ! read -r -p "Choose LLVM channel [stable/nightly] (default: ${default_channel}): " answer; then
+            warn "Input was unavailable; defaulting to '${default_channel}'."
             answer="$default_channel"
         fi
 
@@ -158,6 +161,8 @@ resolve_channel_versions() {
     CURRENT_STEP="resolve stable and nightly llvm majors"
 
     LLVM_NIGHTLY_MAJOR="$({
+        # apt.llvm.org publishes a "currently version N" summary for the
+        # default packages section, which tracks the nightly trunk major.
         printf '%s\n' "$APT_LLVM_PAGE" \
             | sed -En 's/.*currently version ([0-9]+).*/\1/p' \
             | head -n 1
@@ -178,7 +183,7 @@ resolve_channel_versions() {
 
     LLVM_STABLE_MAJOR="$({
         printf '%s\n' "$APT_LLVM_SCRIPT" \
-            | sed -n 's/^CURRENT_LLVM_STABLE=\([0-9][0-9]*\)$/\1/p' \
+            | sed -En 's/^CURRENT_LLVM_STABLE=([0-9]+)$/\1/p' \
             | head -n 1
     })"
 
@@ -490,8 +495,8 @@ configure_llvm_alternatives() {
     for tool in "${tools[@]}"; do
         versioned="/usr/bin/${tool}-${TARGET_MAJOR}"
         if [[ -x "$versioned" ]]; then
-            # Keep priorities monotonic by major version so newer LLVM releases
-            # naturally win automatic selection when multiple versions exist.
+            # Space priorities by 10x the major so newer LLVM releases naturally
+            # win automatic selection when multiple versions coexist.
             sudo update-alternatives --install "/usr/bin/${tool}" "$tool" "$versioned" "$((TARGET_MAJOR * 10))"
             sudo update-alternatives --set "$tool" "$versioned"
         fi
