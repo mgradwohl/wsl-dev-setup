@@ -75,13 +75,13 @@ is_interactive_terminal() {
 validate_bool() {
     local name="$1"
     local value="$2"
-    [[ "$value" =~ ^[01]$ ]] || die "${name} must be 0 or 1."
+    [[ "$value" =~ ^[01]$ ]] || die "${name} must be either 0 or 1, got: ${value}"
 }
 
 validate_channel() {
     local name="$1"
     local value="$2"
-    [[ -z "$value" || "$value" == "stable" || "$value" == "nightly" ]] || die "${name} must be 'stable', 'nightly', or unset."
+    [[ -z "$value" || "$value" == "stable" || "$value" == "nightly" ]] || die "${name} must be 'stable', 'nightly', or unset, got: ${value}"
 }
 
 ask_channel() {
