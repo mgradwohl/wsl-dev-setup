@@ -554,7 +554,7 @@ install_copilot_tools() {
             else
                 warn "Could not query gh extensions automatically; skipping gh-copilot extension installation."
             fi
-        # 124 is the conventional GNU timeout exit code when the command exceeds the configured deadline.
+        # Best-effort timeout detection: 124 is the conventional GNU timeout exit code when the command exceeds the configured deadline.
         elif [[ "$gh_auth_status" -eq 124 ]]; then
             warn "Timed out while checking GitHub CLI authentication; skipping gh-copilot extension installation."
         else
