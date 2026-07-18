@@ -104,7 +104,7 @@ GENERATE_VSCODE_SETTINGS=1 \
 | `INSTALL_VSCODE_EXT_CMAKE_TOOLS` | unset | Install `ms-vscode.cmake-tools` (`1`/`0`); defaults to `1` when `INSTALL_VSCODE_EXTENSIONS=1` |
 | `INSTALL_VSCODE_EXT_CMAKE_SYNTAX` | unset | Install `twxs.cmake` (`1`/`0`); defaults to `1` when `INSTALL_VSCODE_EXTENSIONS=1` |
 | `INSTALL_OPTIONAL_TOOLS_PROMPT` | `1` | Ask for optional tool groups at startup (interactive terminals) |
-| `CHECK_ONLY` | `0` | Print a complete installation plan and exit without making install/config changes (`1`/`0`) |
+| `CHECK_ONLY` (bootstrap) | `0` | For `bootstrap-wsl-dev.sh`: print the full install plan and exit before installs/config changes (`1`/`0`) |
 | `INSTALL_GIT_LFS` | unset | Force Git LFS install (`1`/`0`) |
 | `INSTALL_GITHUB_CLI` | unset | Force GitHub CLI (`gh`) install (`1`/`0`) |
 | `INSTALL_DOCS_TOOLS` | unset | Force Doxygen + Graphviz install (`1`/`0`) |
@@ -116,7 +116,7 @@ GENERATE_VSCODE_SETTINGS=1 \
 | `INSTALL_PROFILE_PRODUCTIVITY` | unset | Force install of productivity CLI bundle (`1`/`0`) |
 | `GENERATE_VSCODE_SETTINGS` | unset | Force generation of `.vscode` defaults (`1`/`0`) |
 | `TARGET_CHANNEL` | unset | For `switch-llvm-channel.sh`: force `stable` or `nightly` instead of prompting |
-| `CHECK_ONLY` | `0` | For `switch-llvm-channel.sh`: refresh metadata, print channel state and planned action, then exit before install/config changes |
+| `CHECK_ONLY` (switcher) | `0` | For `switch-llvm-channel.sh`: configure apt.llvm.org repos, refresh metadata, print channel state/planned action, then exit before package install and `update-alternatives` changes |
 
 When `INSTALL_IWYU=1`, the script now tries the best available package candidate for your selected LLVM major (`include-what-you-use-<major>`, then `include-what-you-use`, then `iwyu`). If none are available on your release, it logs a clear warning and continues.
 
@@ -126,7 +126,7 @@ Tool profile bundles:
 - Testing: `lcov`, `gcovr`, `catch2`, and `libgtest-dev` when available.
 - Productivity: `ripgrep`, `fd-find`, `bat`, `fzf`, `yq`, `tree`, `shellcheck`, `shfmt`, `htop`, `btop`, `ncdu`, and `tmux` when available.
 
-Check-only mode (`CHECK_ONLY=1`) prints a full action plan and exits before installs or configuration changes.
+For `bootstrap-wsl-dev.sh`, check-only mode (`CHECK_ONLY=1`) prints a full action plan and exits before installs or configuration changes.
 
 When `INSTALL_OPTIONAL_TOOLS_PROMPT=1` in an interactive terminal and `INSTALL_VSCODE_EXTENSIONS=1`, the script asks at startup whether to install each recommended VS Code extension individually.
 

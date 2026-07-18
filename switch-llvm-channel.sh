@@ -127,13 +127,28 @@ validate_configuration() {
     validate_bool "CHECK_ONLY" "$CHECK_ONLY"
     TARGET_CHANNEL="${TARGET_CHANNEL,,}"
     validate_channel "TARGET_CHANNEL" "$TARGET_CHANNEL"
-    command_exists curl || die "curl is required."
-    command_exists gpg || die "gpg is required."
-    command_exists sudo || die "sudo is required."
-    command_exists apt-get || die "apt-get is required."
-    command_exists apt-cache || die "apt-cache is required."
-    command_exists dpkg-query || die "dpkg-query is required."
-    command_exists update-alternatives || die "update-alternatives is required."
+    local required_commands=(
+        curl
+        gpg
+        sudo
+        apt-get
+        apt-cache
+        dpkg-query
+        update-alternatives
+        grep
+        sed
+        awk
+        head
+        sort
+        readlink
+        mktemp
+        tee
+        install
+    )
+    local cmd
+    for cmd in "${required_commands[@]}"; do
+        command_exists "$cmd" || die "${cmd} is required."
+    done
 }
 
 fetch_apt_llvm_page() {
@@ -208,7 +223,10 @@ ensure_apt_llvm_keyring() {
         gpg --show-keys --with-colons "$tmp_keyring" 2>/dev/null \
             | awk -F: '/^fpr:/{print $10; exit}'
     )"
-    [[ "$actual_fingerprint" == "$LLVM_APT_GPG_FINGERPRINT" ]] || die "Unexpected apt.llvm.org key fingerprint: ${actual_fingerprint:-missing}"
+    if [[ "$actual_fingerprint" != "$LLVM_APT_GPG_FINGERPRINT" ]]; then
+        rm -f "$tmp_keyring"
+        die "Unexpected apt.llvm.org key fingerprint: ${actual_fingerprint:-missing}"
+    fi
     sudo install -o root -g root -m 0644 "$tmp_keyring" "$keyring_path"
     rm -f "$tmp_keyring"
 }
