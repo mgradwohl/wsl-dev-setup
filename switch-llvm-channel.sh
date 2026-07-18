@@ -162,7 +162,7 @@ resolve_channel_versions() {
     CURRENT_STEP="resolve stable and nightly llvm majors"
 
     LLVM_NIGHTLY_MAJOR="$({
-        # apt.llvm.org publishes a "currently version N" summary for the
+        # apt.llvm.org publishes a "current version N" summary for the
         # default packages section, which tracks the nightly trunk major.
         printf '%s\n' "$APT_LLVM_PAGE" \
             | sed -En 's/.*currently version ([0-9]+).*/\1/p' \
