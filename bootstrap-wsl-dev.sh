@@ -488,7 +488,9 @@ install_copilot_tools() {
     CURRENT_STEP="install common Copilot tools"
     [[ "$INSTALL_COPILOT_TOOLS" == "1" ]] || return 0
 
-    local requested=(
+    local gh_auth_timeout_seconds=15
+    local gh_install_timeout_seconds=60
+    local requested_packages=(
         "git-delta"
         "universal-ctags"
         "entr"
@@ -502,7 +504,7 @@ install_copilot_tools() {
     local installable=()
     local package
 
-    for package in "${requested[@]}"; do
+    for package in "${requested_packages[@]}"; do
         if apt-cache show "$package" >/dev/null 2>&1; then
             installable+=("$package")
         else
@@ -530,11 +532,11 @@ install_copilot_tools() {
 
     if command_exists gh; then
         local gh_extensions
-        if timeout 15s gh auth status >/dev/null 2>&1; then
-            if gh_extensions="$(timeout 15s gh extension list 2>/dev/null)"; then
+        if timeout "${gh_auth_timeout_seconds}s" gh auth status >/dev/null 2>&1; then
+            if gh_extensions="$(timeout "${gh_auth_timeout_seconds}s" gh extension list 2>/dev/null)"; then
                 if ! printf '%s\n' "$gh_extensions" | awk '{print $1}' | grep -qx 'github/gh-copilot'; then
                     log "Installing GitHub Copilot CLI extension for gh"
-                    if timeout 60s gh extension install github/gh-copilot; then
+                    if timeout "${gh_install_timeout_seconds}s" gh extension install github/gh-copilot; then
                         ok "Installed gh-copilot extension"
                     else
                         warn "Could not install gh-copilot extension automatically."
