@@ -552,7 +552,7 @@ install_copilot_tools() {
 
         if [[ "$gh_auth_status" -eq 0 ]]; then
             if gh_extensions="$(timeout "${GH_COPILOT_QUERY_TIMEOUT_SECONDS}s" gh extension list 2>/dev/null)"; then
-                if ! printf '%s\n' "$gh_extensions" | grep -q 'github/gh-copilot'; then
+                if ! printf '%s\n' "$gh_extensions" | awk '{ for (i = 1; i <= NF; ++i) if ($i == "github/gh-copilot") found=1 } END { exit found ? 0 : 1 }'; then
                     log "Installing GitHub Copilot CLI extension for gh"
                     if timeout "${GH_COPILOT_INSTALL_TIMEOUT_SECONDS}s" gh extension install github/gh-copilot; then
                         ok "Installed gh-copilot extension"
@@ -563,11 +563,13 @@ install_copilot_tools() {
             else
                 warn "Could not query gh extensions automatically; skipping gh-copilot extension installation."
             fi
-        elif [[ "$gh_auth_status" -eq 124 ]]; then
-            # Best-effort timeout detection: 124 is the conventional GNU timeout exit code when the command exceeds the configured deadline, though other timeout implementations may differ.
-            warn "Timed out while checking GitHub CLI authentication; skipping gh-copilot extension installation."
         else
-            warn "GitHub CLI is not authenticated; skipping gh-copilot extension installation."
+            # Best-effort timeout detection: 124 is the conventional GNU timeout exit code when the command exceeds the configured deadline, though other timeout implementations may differ.
+            if [[ "$gh_auth_status" -eq 124 ]]; then
+                warn "Timed out while checking GitHub CLI authentication; skipping gh-copilot extension installation."
+            else
+                warn "GitHub CLI is not authenticated; skipping gh-copilot extension installation."
+            fi
         fi
     else
         warn "GitHub CLI is not installed; skipping gh-copilot extension installation."
