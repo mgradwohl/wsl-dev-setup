@@ -490,6 +490,7 @@ install_copilot_tools() {
     [[ "$INSTALL_COPILOT_TOOLS" == "1" ]] || return 0
 
     local gh_auth_timeout_seconds=15
+    local gh_query_timeout_seconds=30
     local gh_install_timeout_seconds=60
     local requested_packages=(
         "git-delta"
@@ -541,7 +542,7 @@ install_copilot_tools() {
         fi
 
         if [[ "$gh_auth_status" -eq 0 ]]; then
-            if gh_extensions="$(timeout "${gh_auth_timeout_seconds}s" gh extension list 2>/dev/null)"; then
+            if gh_extensions="$(timeout "${gh_query_timeout_seconds}s" gh extension list 2>/dev/null)"; then
                 if ! printf '%s\n' "$gh_extensions" | awk '{print $1}' | grep -qx 'github/gh-copilot'; then
                     log "Installing GitHub Copilot CLI extension for gh"
                     if timeout "${gh_install_timeout_seconds}s" gh extension install github/gh-copilot; then
