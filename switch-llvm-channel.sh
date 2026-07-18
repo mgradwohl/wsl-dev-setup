@@ -16,6 +16,7 @@ CHECK_ONLY="${CHECK_ONLY:-0}"
 # Guardrail for obviously bad parse results before computing alternatives
 # priorities from the LLVM major version.
 MAX_SUPPORTED_LLVM_MAJOR=999
+LLVM_APT_GPG_FINGERPRINT="6084F3CF814B57C1CF12EFD515CF4D18AF4F7421"
 
 CURRENT_STEP="startup"
 VERSION_CODENAME=""
@@ -195,6 +196,7 @@ ensure_apt_llvm_keyring() {
     CURRENT_STEP="install apt.llvm.org keyring"
     local keyring_path="/usr/share/keyrings/llvm-snapshot.gpg"
     local tmp_keyring
+    local actual_fingerprint
 
     tmp_keyring="$(mktemp)"
     curl --fail --location --silent --show-error \
@@ -202,6 +204,11 @@ ensure_apt_llvm_keyring() {
         --retry 3 --retry-connrefused \
         https://apt.llvm.org/llvm-snapshot.gpg.key \
         | gpg --dearmor > "$tmp_keyring"
+    actual_fingerprint="$(
+        gpg --show-keys --with-colons "$tmp_keyring" 2>/dev/null \
+            | awk -F: '/^fpr:/{print $10; exit}'
+    )"
+    [[ "$actual_fingerprint" == "$LLVM_APT_GPG_FINGERPRINT" ]] || die "Unexpected apt.llvm.org key fingerprint: ${actual_fingerprint:-missing}"
     sudo install -o root -g root -m 0644 "$tmp_keyring" "$keyring_path"
     rm -f "$tmp_keyring"
 }
@@ -496,7 +503,8 @@ configure_llvm_alternatives() {
         versioned="/usr/bin/${tool}-${TARGET_MAJOR}"
         if [[ -x "$versioned" ]]; then
             # Space priorities by 10x the major so newer LLVM releases naturally
-            # win automatic selection when multiple versions coexist.
+            # win auto mode; the explicit --set below still forces the selected
+            # version immediately even when other alternatives already exist.
             sudo update-alternatives --install "/usr/bin/${tool}" "$tool" "$versioned" "$((TARGET_MAJOR * 10))"
             sudo update-alternatives --set "$tool" "$versioned"
         fi
