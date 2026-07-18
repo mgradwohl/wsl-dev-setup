@@ -158,7 +158,7 @@ resolve_channel_versions() {
 
     LLVM_NIGHTLY_MAJOR="$({
         printf '%s\n' "$APT_LLVM_PAGE" \
-            | sed -n 's/.*currently version \([0-9][0-9]*\).*/\1/p' \
+            | sed -En 's/.*currently version ([0-9]+).*/\1/p' \
             | head -n 1
     })"
 
@@ -167,7 +167,7 @@ resolve_channel_versions() {
         # stable, qualification, and development majors inline.
         LLVM_NIGHTLY_MAJOR="$({
             printf '%s\n' "$APT_LLVM_PAGE" \
-                | sed -n 's/.*currently \([0-9][0-9]*\), \([0-9][0-9]*\) and \([0-9][0-9]*\).*/\1\n\2\n\3/p' \
+                | sed -En 's/.*currently ([0-9]+), ([0-9]+) and ([0-9]+).*/\1\n\2\n\3/p' \
                 | sort -nr \
                 | head -n 1
         })"
@@ -248,16 +248,22 @@ verify_channel_packages_available() {
 
 resolve_current_setup() {
     CURRENT_STEP="detect current llvm setup"
+    local clang_command=""
 
     if command_exists clang; then
-        CURRENT_CLANG_PATH="$(readlink -f "$(command -v clang)" 2>/dev/null || true)"
+        clang_command="$(command -v clang 2>/dev/null || true)"
+        if [[ -n "$clang_command" ]]; then
+            CURRENT_CLANG_PATH="$(readlink -f "$clang_command" 2>/dev/null || true)"
+        else
+            CURRENT_CLANG_PATH=""
+        fi
     else
         CURRENT_CLANG_PATH=""
     fi
 
     CURRENT_MAJOR="$({
         printf '%s\n' "$CURRENT_CLANG_PATH" \
-            | sed -n 's#.*/clang-\([0-9][0-9]*\)$#\1#p'
+            | sed -En 's#.*/clang-([0-9]+)$#\1#p'
     })"
 
     if [[ -n "$CURRENT_MAJOR" ]]; then
@@ -450,6 +456,8 @@ install_target_packages() {
 configure_llvm_alternatives() {
     CURRENT_STEP="configure llvm alternatives"
     log "Registering LLVM ${TARGET_MAJOR} as the default toolchain"
+    [[ "$TARGET_MAJOR" =~ ^[0-9]+$ ]] || die "TARGET_MAJOR must be numeric before configuring update-alternatives."
+    ((TARGET_MAJOR <= 999)) || die "TARGET_MAJOR is unexpectedly large for update-alternatives priority calculation: ${TARGET_MAJOR}"
 
     # Some entries below come from optional packages, so versioned binaries may
     # legitimately be absent on a given channel or Ubuntu release.
