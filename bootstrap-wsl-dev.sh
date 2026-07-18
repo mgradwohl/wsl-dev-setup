@@ -245,7 +245,7 @@ configure_optional_choices() {
             if ask_yes_no "Install Productivity bundle (ripgrep, fzf, shell tooling, terminal helpers)?" "N"; then INSTALL_PROFILE_PRODUCTIVITY="1"; else INSTALL_PROFILE_PRODUCTIVITY="0"; fi
         fi
         if [[ -z "$INSTALL_COPILOT_TOOLS" ]]; then
-            if ask_yes_no "Install common Copilot tools (git-delta, ctags, entr, cloc, sqlite3, direnv, pipx, zsh)?" "N"; then INSTALL_COPILOT_TOOLS="1"; else INSTALL_COPILOT_TOOLS="0"; fi
+            if ask_yes_no "Install common Copilot tools (git-delta, universal-ctags, entr, cloc, sqlite3, direnv, pipx, zsh, bash-completion)?" "N"; then INSTALL_COPILOT_TOOLS="1"; else INSTALL_COPILOT_TOOLS="0"; fi
         fi
 
         if [[ -z "$GENERATE_VSCODE_SETTINGS" ]]; then
@@ -544,7 +544,12 @@ install_copilot_tools() {
                 warn "Could not query gh extensions automatically; skipping gh-copilot extension installation."
             fi
         else
-            warn "GitHub CLI is not authenticated; skipping gh-copilot extension installation."
+            local gh_auth_status=$?
+            if [[ "$gh_auth_status" -eq 124 ]]; then
+                warn "Timed out while checking GitHub CLI authentication; skipping gh-copilot extension installation."
+            else
+                warn "GitHub CLI is not authenticated; skipping gh-copilot extension installation."
+            fi
         fi
     else
         warn "GitHub CLI is not installed; skipping gh-copilot extension installation."

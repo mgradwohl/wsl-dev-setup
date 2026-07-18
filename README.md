@@ -203,7 +203,7 @@ Use `INSTALL_COPILOT_TOOLS=1` (or answer Yes at startup) to install a bundle of 
 - `pipx` for isolated Python CLI tool installs
 - `zsh` and `bash-completion` for improved shell/completion support
 
-If `gh` is installed, the bootstrap also attempts to install the official `gh-copilot` extension.
+If `gh` is installed and authenticated, the bootstrap also attempts to install the official `gh-copilot` extension.
 
 Post-install behavior:
 - configures `git-delta` as the default Git pager
