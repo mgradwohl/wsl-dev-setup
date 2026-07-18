@@ -104,7 +104,7 @@ GENERATE_VSCODE_SETTINGS=1 \
 | `INSTALL_VSCODE_EXT_CMAKE_TOOLS` | unset | Install `ms-vscode.cmake-tools` (`1`/`0`); defaults to `1` when `INSTALL_VSCODE_EXTENSIONS=1` |
 | `INSTALL_VSCODE_EXT_CMAKE_SYNTAX` | unset | Install `twxs.cmake` (`1`/`0`); defaults to `1` when `INSTALL_VSCODE_EXTENSIONS=1` |
 | `INSTALL_OPTIONAL_TOOLS_PROMPT` | `1` | Ask for optional tool groups at startup (interactive terminals) |
-| `CHECK_ONLY` | `0` | For `bootstrap-wsl-dev.sh`: print the full install plan and exit before installs/config changes (`1`/`0`) |
+| `CHECK_ONLY` | `0` | For `bootstrap-wsl-dev.sh`: print the full install plan and exit before installs/configuration changes (`1`/`0`) |
 | `INSTALL_GIT_LFS` | unset | Force Git LFS install (`1`/`0`) |
 | `INSTALL_GITHUB_CLI` | unset | Force GitHub CLI (`gh`) install (`1`/`0`) |
 | `INSTALL_DOCS_TOOLS` | unset | Force Doxygen + Graphviz install (`1`/`0`) |
@@ -116,7 +116,7 @@ GENERATE_VSCODE_SETTINGS=1 \
 | `INSTALL_PROFILE_PRODUCTIVITY` | unset | Force install of productivity CLI bundle (`1`/`0`) |
 | `GENERATE_VSCODE_SETTINGS` | unset | Force generation of `.vscode` defaults (`1`/`0`) |
 | `TARGET_CHANNEL` | unset | For `switch-llvm-channel.sh`: force `stable` or `nightly` instead of prompting |
-| `CHECK_ONLY` | `0` | For `switch-llvm-channel.sh`: configure apt.llvm.org repos, refresh metadata, print channel state/planned action, then exit before `apt-get install` and `update-alternatives` changes |
+| `CHECK_ONLY` | `0` | For `switch-llvm-channel.sh`: configure apt.llvm.org repos/metadata, show channel state/planned action, then exit before installs/`update-alternatives` changes (`1`/`0`) |
 
 When `INSTALL_IWYU=1`, the script now tries the best available package candidate for your selected LLVM major (`include-what-you-use-<major>`, then `include-what-you-use`, then `iwyu`). If none are available on your release, it logs a clear warning and continues.
 
