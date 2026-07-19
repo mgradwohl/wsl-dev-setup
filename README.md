@@ -37,6 +37,41 @@ The script will ask which optional tool groups you want.
 
 ---
 
+## Switch between LLVM stable and nightly
+
+Use the standalone channel switcher when you want to inspect the current LLVM setup, refresh all configured LLVM APT metadata, compare stable vs nightly availability, and then stay on or switch channels.
+
+```bash
+chmod +x switch-llvm-channel.sh
+./switch-llvm-channel.sh
+```
+
+Non-interactive examples:
+
+```bash
+TARGET_CHANNEL=stable ./switch-llvm-channel.sh
+TARGET_CHANNEL=nightly ./switch-llvm-channel.sh
+CHECK_ONLY=1 TARGET_CHANNEL=nightly ./switch-llvm-channel.sh
+```
+
+What it does:
+- Detects the current default `clang` target and classifies it as stable, nightly, or custom
+- Refreshes `apt` metadata before checking either channel
+- Tracks the latest stable release from `apt.llvm.org/llvm.sh`
+- Tracks the current nightly trunk major from `apt.llvm.org`
+- Reports whether each channel is installed, partially installed, or has updates available
+- Installs or updates the selected channel and updates `update-alternatives`
+
+Current channel mapping on `apt.llvm.org` is:
+- stable = latest released LLVM major
+- nightly = unversioned `llvm-toolchain-<codename>` repo that tracks trunk
+
+Example naming on Ubuntu 24.04 (`noble`):
+- Stable repo: `llvm-toolchain-noble-<stable-major>` such as `llvm-toolchain-noble-21`
+- Nightly repo: `llvm-toolchain-noble`
+
+---
+
 ## Non-interactive usage
 
 Use env vars to skip prompts and force choices:
@@ -69,7 +104,7 @@ GENERATE_VSCODE_SETTINGS=1 \
 | `INSTALL_VSCODE_EXT_CMAKE_TOOLS` | unset | Install `ms-vscode.cmake-tools` (`1`/`0`); defaults to `1` when `INSTALL_VSCODE_EXTENSIONS=1` |
 | `INSTALL_VSCODE_EXT_CMAKE_SYNTAX` | unset | Install `twxs.cmake` (`1`/`0`); defaults to `1` when `INSTALL_VSCODE_EXTENSIONS=1` |
 | `INSTALL_OPTIONAL_TOOLS_PROMPT` | `1` | Ask for optional tool groups at startup (interactive terminals) |
-| `CHECK_ONLY` | `0` | Print a complete installation plan and exit without making install/config changes (`1`/`0`) |
+| `CHECK_ONLY` | `0` | For `bootstrap-wsl-dev.sh`: print the full install plan and exit before installs/configuration changes (`1`/`0`) |
 | `INSTALL_GIT_LFS` | unset | Force Git LFS install (`1`/`0`) |
 | `INSTALL_GITHUB_CLI` | unset | Force GitHub CLI (`gh`) install (`1`/`0`) |
 | `INSTALL_DOCS_TOOLS` | unset | Force Doxygen + Graphviz install (`1`/`0`) |
@@ -80,6 +115,8 @@ GENERATE_VSCODE_SETTINGS=1 \
 | `INSTALL_PROFILE_TESTING` | unset | Force install of testing bundle (`1`/`0`) |
 | `INSTALL_PROFILE_PRODUCTIVITY` | unset | Force install of productivity CLI bundle (`1`/`0`) |
 | `GENERATE_VSCODE_SETTINGS` | unset | Force generation of `.vscode` defaults (`1`/`0`) |
+| `TARGET_CHANNEL` | unset | For `switch-llvm-channel.sh`: force `stable` or `nightly` instead of prompting |
+| `CHECK_ONLY` | `0` | For `switch-llvm-channel.sh`: configure apt.llvm.org repos/metadata, show channel state/planned action, then exit before installs/`update-alternatives` changes (`1`/`0`) |
 
 When `INSTALL_IWYU=1`, the script now tries the best available package candidate for your selected LLVM major (`include-what-you-use-<major>`, then `include-what-you-use`, then `iwyu`). If none are available on your release, it logs a clear warning and continues.
 
@@ -89,7 +126,7 @@ Tool profile bundles:
 - Testing: `lcov`, `gcovr`, `catch2`, and `libgtest-dev` when available.
 - Productivity: `ripgrep`, `fd-find`, `bat`, `fzf`, `yq`, `tree`, `shellcheck`, `shfmt`, `htop`, `btop`, `ncdu`, and `tmux` when available.
 
-Check-only mode (`CHECK_ONLY=1`) prints a full action plan and exits before installs or configuration changes.
+For `bootstrap-wsl-dev.sh`, check-only mode (`CHECK_ONLY=1`) prints a full action plan and exits before installs or configuration changes.
 
 When `INSTALL_OPTIONAL_TOOLS_PROMPT=1` in an interactive terminal and `INSTALL_VSCODE_EXTENSIONS=1`, the script asks at startup whether to install each recommended VS Code extension individually.
 
@@ -131,6 +168,15 @@ clang-tidy --version
 cmake --version
 ninja --version
 python3 --version
+```
+
+For channel switching, also verify:
+
+```bash
+clang --version
+clangd --version
+clang-tidy --version
+update-alternatives --display clang
 ```
 
 Open the current directory in VS Code (from WSL):
@@ -207,6 +253,14 @@ For optional LLVM packages (`lld`, `lldb`, `libc++`, `libc++abi`):
 - the script first tries exact versioned names (for example `lld-23`),
 - then tries exact versioned names after enabling `apt.llvm.org`,
 - then tries unversioned fallbacks only if the package major is recent enough (at least requested major minus one).
+
+For stable/nightly channel changes, run:
+
+```bash
+./switch-llvm-channel.sh
+```
+
+The switcher refreshes both stable and nightly repo metadata first, reports whether each channel is current or has updates available, and then either updates the current channel or switches `update-alternatives` to the selected one.
 
 ### `winget` unavailable
 
