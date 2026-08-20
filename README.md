@@ -5,7 +5,7 @@ Bootstrap a modern **C++ in WSL** environment with a **clang/clangd-first** work
 ## What this gives you
 
 - Ubuntu WSL bootstrap (24.04+)
-- LLVM/Clang toolchain with default policy: **latest available major >= 23** from configured APT repos; falls back to `apt.llvm.org` when the selected version is not in Ubuntu repos
+- LLVM/Clang 22, the current stable release; falls back to `apt.llvm.org` when the selected version is not in Ubuntu repos
 - `update-alternatives` registration so `clang`, `clang++`, `clangd`, `clang-tidy`, etc. resolve to the selected LLVM major
 - VS Code setup flow for WSL (optional Windows install + optional extension install)
 - Interactive optional-tool selection at startup (all prompts are collected before package installs begin)
@@ -62,7 +62,7 @@ GENERATE_VSCODE_SETTINGS=1 \
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `LLVM_VERSION` | `latest` | `latest` = highest available LLVM major `>=23`; numeric values must be `>=23` |
+| `LLVM_VERSION` | `22` | Current stable LLVM; `latest` resolves the newest stable major available (currently 22), and numeric values `>=21` select an explicit release |
 | `INSTALL_WINDOWS_VSCODE` | `1` | Install Windows VS Code through winget when in WSL |
 | `INSTALL_VSCODE_EXTENSIONS` | `1` | Install recommended clangd/CMake extensions |
 | `INSTALL_VSCODE_EXT_CLANGD` | unset | Install `llvm-vs-code-extensions.vscode-clangd` (`1`/`0`); defaults to `1` when `INSTALL_VSCODE_EXTENSIONS=1` |
@@ -71,7 +71,7 @@ GENERATE_VSCODE_SETTINGS=1 \
 | `INSTALL_OPTIONAL_TOOLS_PROMPT` | `1` | Ask for optional tool groups at startup (interactive terminals) |
 | `CHECK_ONLY` | `0` | Print a complete installation plan and exit without making install/config changes (`1`/`0`) |
 | `INSTALL_GIT_LFS` | unset | Force Git LFS install (`1`/`0`) |
-| `INSTALL_GITHUB_CLI` | unset | Force GitHub CLI (`gh`) install (`1`/`0`) |
+| `INSTALL_GITHUB_CLI` | unset | Force the current GitHub CLI (`gh`) from its official APT repository (`1`/`0`) |
 | `INSTALL_DOCS_TOOLS` | unset | Force Doxygen + Graphviz install (`1`/`0`) |
 | `INSTALL_IWYU` | unset | Force Include-What-You-Use install (`1`/`0`) |
 | `INSTALL_PROFILING_TOOLS` | unset | Force Valgrind + Heaptrack + gperftools install (`1`/`0`) |
@@ -96,7 +96,8 @@ When `INSTALL_OPTIONAL_TOOLS_PROMPT=1` in an interactive terminal and `INSTALL_V
 Runtime output behavior:
 - After apt metadata refresh, the script prints a compact "Resolved LLVM selection" line instead of reprinting the full startup summary.
 - Optional LLVM package availability warnings are grouped to reduce output noise.
-- Optional LLVM package resolution now uses a tiered strategy: exact version in current repos, then exact version via `apt.llvm.org`, then unversioned fallback packages only when their detected major is at least `(requested_major - 1)`.
+- Optional LLVM package resolution uses a tiered strategy: exact version in current repos, then exact version via `apt.llvm.org`, then unversioned fallback packages only when their detected major is at least `(requested_major - 1)`.
+- External APT repositories are configured with dedicated keyrings whose signing-key fingerprints are verified before installation.
 - A final "Warnings recap" is printed at the end when non-fatal warnings occurred.
 - Tool version checks now distinguish non-zero exits from unavailable commands.
 - A one-line toolchain summary is printed near the end (optional fallback used/rejected/missing + alternatives configured/skipped).
@@ -204,7 +205,7 @@ Then reopen Ubuntu and rerun bootstrap if needed.
 Rerun bootstrap. It validates the full required LLVM package set for the selected major and falls back to `apt.llvm.org` when Ubuntu repositories are incomplete for that major.
 
 For optional LLVM packages (`lld`, `lldb`, `libc++`, `libc++abi`):
-- the script first tries exact versioned names (for example `lld-23`),
+- the script first tries exact versioned names (for example `lld-22`),
 - then tries exact versioned names after enabling `apt.llvm.org`,
 - then tries unversioned fallbacks only if the package major is recent enough (at least requested major minus one).
 
@@ -220,7 +221,9 @@ INSTALL_WINDOWS_VSCODE=0 ./bootstrap-wsl-dev.sh
 
 ## What changed recently
 
-- LLVM default policy moved from fixed `22` to `latest >=23`
+- LLVM defaults to the current stable 22 release instead of the LLVM 23 development snapshot
+- GitHub CLI installs from GitHub's maintained APT repository instead of Ubuntu's obsolete 2.46 package
+- apt.llvm.org support is detected from the requested release endpoint, including Ubuntu 26.04, rather than a hard-coded codename list
 - `apt-get full-upgrade` path removed
 - Added startup config validation and better failure diagnostics
 - Added interactive optional-tool selection
