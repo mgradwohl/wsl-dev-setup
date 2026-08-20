@@ -14,8 +14,14 @@ set -Eeuo pipefail
 #   INSTALL_WINDOWS_VSCODE=0 ./bootstrap-wsl-dev.sh
 #   GENERATE_VSCODE_SETTINGS=1 ./bootstrap-wsl-dev.sh
 
-LLVM_VERSION="${LLVM_VERSION:-latest}"
-MIN_LLVM_VERSION=23
+LLVM_VERSION="${LLVM_VERSION:-22}"
+MIN_LLVM_VERSION=21
+STABLE_LLVM_VERSION=22
+LLVM_APT_KEY_FINGERPRINT="6084F3CF814B57C1CF12EFD515CF4D18AF4F7421"
+GITHUB_CLI_APT_KEY_FINGERPRINTS=(
+    "2C6106201985B60E6C7AC87323F3D4EA75716059"
+    "7F38BBB59D064DBCB3D84D725612B36462313325"
+)
 INSTALL_WINDOWS_VSCODE="${INSTALL_WINDOWS_VSCODE:-1}"
 INSTALL_VSCODE_EXTENSIONS="${INSTALL_VSCODE_EXTENSIONS:-1}"
 INSTALL_VSCODE_EXT_CLANGD="${INSTALL_VSCODE_EXT_CLANGD:-}"
@@ -37,7 +43,11 @@ CHECK_ONLY="${CHECK_ONLY:-0}"
 CURRENT_STEP="startup"
 LLVM_INSTALL_SOURCE="undetermined"
 LLVM_VERSION_REQUESTED="$LLVM_VERSION"
-LLVM_VERSION_SOURCE_DETAIL="pending resolution"
+if [[ "$LLVM_VERSION" == "latest" ]]; then
+    LLVM_VERSION_SOURCE_DETAIL="pending stable-version resolution"
+else
+    LLVM_VERSION_SOURCE_DETAIL="explicitly requested"
+fi
 IWYU_INSTALL_CANDIDATE=""
 WARNINGS=()
 LLVM_OPTIONAL_MISSING=()
@@ -119,8 +129,8 @@ ask_yes_no() {
         fi
 
         case "${answer,,}" in
-            y|yes) return 0 ;;
-            n|no) return 1 ;;
+            y | yes) return 0 ;;
+            n | no) return 1 ;;
             *) warn "Please answer y or n." ;;
         esac
     done
@@ -130,7 +140,7 @@ validate_configuration() {
     CURRENT_STEP="validate configuration"
 
     if [[ "$LLVM_VERSION" != "latest" ]]; then
-        [[ "$LLVM_VERSION" =~ ^[0-9]+$ ]] || die "LLVM_VERSION must be 'latest' or an integer (for example ${MIN_LLVM_VERSION})."
+        [[ "$LLVM_VERSION" =~ ^[0-9]+$ ]] || die "LLVM_VERSION must be 'latest' or an integer (for example ${STABLE_LLVM_VERSION})."
         ((LLVM_VERSION >= MIN_LLVM_VERSION)) || die "When numeric, LLVM_VERSION must be ${MIN_LLVM_VERSION} or newer."
     fi
 
@@ -183,20 +193,20 @@ update_apt_metadata_and_resolve_llvm() {
     if [[ "$LLVM_VERSION_REQUESTED" == "latest" ]]; then
         local resolved
         resolved="$(
-            apt-cache search --names-only '^clang-[0-9][0-9]*$' \
-                | awk '{print $1}' \
-                | sed -E 's/^clang-([0-9]+)$/\1/' \
-                | awk -v min="${MIN_LLVM_VERSION}" '$1 >= min' \
-                | sort -nr \
-                | head -n 1
+            apt-cache search --names-only '^clang-[0-9][0-9]*$' |
+                awk '{print $1}' |
+                sed -E 's/^clang-([0-9]+)$/\1/' |
+                awk -v min="${MIN_LLVM_VERSION}" -v stable="${STABLE_LLVM_VERSION}" '$1 >= min && $1 <= stable' |
+                sort -nr |
+                head -n 1
         )"
 
         if [[ -n "$resolved" ]]; then
             LLVM_VERSION="$resolved"
-            LLVM_VERSION_SOURCE_DETAIL="latest from configured apt metadata"
+            LLVM_VERSION_SOURCE_DETAIL="latest stable from configured apt metadata"
         else
-            LLVM_VERSION="${MIN_LLVM_VERSION}"
-            LLVM_VERSION_SOURCE_DETAIL="fallback minimum (${MIN_LLVM_VERSION}); no LLVM >=${MIN_LLVM_VERSION} package found in current apt metadata — will install from apt.llvm.org if unavailable in Ubuntu repos"
+            LLVM_VERSION="${STABLE_LLVM_VERSION}"
+            LLVM_VERSION_SOURCE_DETAIL="current stable (${STABLE_LLVM_VERSION}); no supported stable LLVM package found in current apt metadata — will install from apt.llvm.org if unavailable in Ubuntu repos"
         fi
     else
         LLVM_VERSION_SOURCE_DETAIL="explicitly requested"
@@ -381,6 +391,63 @@ install_base_packages() {
     ok "Base packages installed"
 }
 
+keyring_matches_fingerprints() {
+    local keyring="$1"
+    shift
+    local fingerprint_output
+    if ! fingerprint_output="$(
+        gpg --batch --show-keys --with-colons "$keyring" 2>/dev/null |
+            awk -F: '$1 == "pub" { primary = 1; next } $1 == "fpr" && primary { print $10; primary = 0 }'
+    )"; then
+        return 1
+    fi
+
+    local fingerprints=()
+    local fingerprint
+    while IFS= read -r fingerprint; do
+        [[ -n "$fingerprint" ]] && fingerprints+=("$fingerprint")
+    done <<<"$fingerprint_output"
+
+    ((${#fingerprints[@]} == $#)) || return 1
+
+    local expected
+    for expected in "$@"; do
+        printf '%s\n' "${fingerprints[@]}" | grep -Fxq "$expected" || return 1
+    done
+    return 0
+}
+
+configure_github_cli_repo() {
+    CURRENT_STEP="configure github cli repository"
+    [[ "$INSTALL_GITHUB_CLI" == "1" ]] || return 0
+
+    log "Configuring the official GitHub CLI repository"
+    local keyring_path="/etc/apt/keyrings/githubcli-archive-keyring.gpg"
+    local keyring_tmp
+    keyring_tmp="$(mktemp)"
+
+    curl --fail --location --silent --show-error \
+        --proto '=https' --tlsv1.2 \
+        --retry 3 --retry-connrefused \
+        https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        --output "$keyring_tmp"
+
+    if ! keyring_matches_fingerprints "$keyring_tmp" "${GITHUB_CLI_APT_KEY_FINGERPRINTS[@]}"; then
+        rm -f "$keyring_tmp"
+        die "The downloaded GitHub CLI repository key did not match an expected fingerprint."
+    fi
+
+    sudo install -d -m 0755 /etc/apt/keyrings /etc/apt/sources.list.d
+    sudo install -m 0644 "$keyring_tmp" "$keyring_path"
+    rm -f "$keyring_tmp"
+
+    printf 'deb [arch=%s signed-by=%s] https://cli.github.com/packages stable main\n' \
+        "$(dpkg --print-architecture)" "$keyring_path" |
+        sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+    sudo apt-get update
+    ok "Official GitHub CLI repository configured"
+}
+
 install_optional_packages() {
     CURRENT_STEP="install optional packages"
     local requested=()
@@ -487,10 +554,10 @@ No package installs or system changes will be made.
 
 Planned actions:
   1) Update apt metadata and resolve LLVM major from request: ${LLVM_VERSION_REQUESTED}
-  2) Install base packages: build-essential, cmake, ninja-build, ccache, gdb, git, python3 toolchain, and helpers
+  2) Install base packages: build-essential, cmake, ninja-build, ccache, gdb, git, Python 3 toolchain, and helpers
   3) Install optional packages by selection:
      - Git LFS: $([[ "$INSTALL_GIT_LFS" == "1" ]] && echo "yes" || echo "no")
-     - GitHub CLI: $([[ "$INSTALL_GITHUB_CLI" == "1" ]] && echo "yes" || echo "no")
+     - GitHub CLI from its official repository: $([[ "$INSTALL_GITHUB_CLI" == "1" ]] && echo "yes" || echo "no")
      - Docs tools: $([[ "$INSTALL_DOCS_TOOLS" == "1" ]] && echo "yes" || echo "no")
      - Profiling tools: $([[ "$INSTALL_PROFILING_TOOLS" == "1" ]] && echo "yes" || echo "no")
   4) Install tool profile bundles by selection:
@@ -570,44 +637,45 @@ enable_apt_llvm_repo() {
     local required="${1:-1}"
     [[ "$APT_LLVM_REPO_ENABLED" == "0" ]] || return 0
 
-    # apt.llvm.org does not publish every Ubuntu codename immediately.
-    # Keep this list conservative and update as new codenames appear.
-    local supported_codenames=(
-        noble
-        jammy
-        focal
-        bionic
-    )
-    local codename_supported=0
-    local codename
-    for codename in "${supported_codenames[@]}"; do
-        if [[ "$VERSION_CODENAME" == "$codename" ]]; then
-            codename_supported=1
-            break
-        fi
-    done
-
-    if [[ "$codename_supported" == "0" ]]; then
+    local repository_url="https://apt.llvm.org/${VERSION_CODENAME}"
+    local repository_suite="llvm-toolchain-${VERSION_CODENAME}-${LLVM_VERSION}"
+    local release_url="${repository_url}/dists/${repository_suite}/Release"
+    if ! curl --fail --location --silent --show-error \
+        --proto '=https' --tlsv1.2 \
+        --retry 3 --retry-connrefused \
+        --head "$release_url" >/dev/null; then
         if [[ "$required" == "1" ]]; then
-            die "apt.llvm.org does not currently list Ubuntu codename '${VERSION_CODENAME}' for LLVM ${LLVM_VERSION}. Required LLVM packages are unavailable in Ubuntu repositories, so installation cannot continue."
+            die "apt.llvm.org does not currently publish LLVM ${LLVM_VERSION} for Ubuntu '${VERSION_CODENAME}' (${release_url}). Required LLVM packages are unavailable in Ubuntu repositories, so installation cannot continue."
         fi
-        warn "apt.llvm.org does not currently list Ubuntu codename '${VERSION_CODENAME}'; skipping optional apt.llvm.org lookup and continuing with fallback resolution."
+        warn "apt.llvm.org does not currently publish LLVM ${LLVM_VERSION} for Ubuntu '${VERSION_CODENAME}'; skipping the optional repository lookup."
         return 1
     fi
 
     log "Adding apt.llvm.org repository for LLVM ${LLVM_VERSION}"
 
-    local keyring_path="/usr/share/keyrings/llvm-snapshot.gpg"
+    local keyring_path="/etc/apt/keyrings/apt.llvm.org.gpg"
+    local keyring_tmp
+    keyring_tmp="$(mktemp)"
     curl --fail --location --silent --show-error \
         --proto '=https' --tlsv1.2 \
         --retry 3 --retry-connrefused \
         https://apt.llvm.org/llvm-snapshot.gpg.key \
-        | sudo gpg --dearmor --yes -o "$keyring_path"
+        --output "$keyring_tmp"
+
+    if ! keyring_matches_fingerprints "$keyring_tmp" "$LLVM_APT_KEY_FINGERPRINT"; then
+        rm -f "$keyring_tmp"
+        die "The downloaded apt.llvm.org repository key did not match fingerprint ${LLVM_APT_KEY_FINGERPRINT}."
+    fi
+
+    sudo install -d -m 0755 /etc/apt/keyrings /etc/apt/sources.list.d
+    sudo gpg --dearmor --yes -o "$keyring_path" "$keyring_tmp"
+    sudo chmod 0644 "$keyring_path"
+    rm -f "$keyring_tmp"
 
     local sources_file="/etc/apt/sources.list.d/llvm-${LLVM_VERSION}.list"
-    printf 'deb [signed-by=%s] https://apt.llvm.org/%s/ llvm-toolchain-%s-%s main\n' \
-        "$keyring_path" "${VERSION_CODENAME}" "${VERSION_CODENAME}" "${LLVM_VERSION}" \
-        | sudo tee "$sources_file" >/dev/null
+    printf 'deb [signed-by=%s] %s/ %s main\n' \
+        "$keyring_path" "$repository_url" "$repository_suite" |
+        sudo tee "$sources_file" >/dev/null
 
     if ! sudo apt-get update; then
         sudo rm -f "$sources_file"
@@ -868,14 +936,14 @@ install_windows_vscode() {
 
     log "Installing Windows VS Code with winget"
     powershell.exe -NoProfile -NonInteractive -Command \
-        'winget install --id Microsoft.VisualStudioCode --exact --scope machine --disable-interactivity --accept-package-agreements --accept-source-agreements' \
-        || warn "winget could not install VS Code. You may need to run the script again from an elevated Windows terminal."
+        'winget install --id Microsoft.VisualStudioCode --exact --scope machine --disable-interactivity --accept-package-agreements --accept-source-agreements' ||
+        warn "winget could not install VS Code. You may need to run the script again from an elevated Windows terminal."
 
     log "Installing the Windows VS Code WSL extension"
     # shellcheck disable=SC2016 # PowerShell variable $code must not be shell-expanded by bash.
     powershell.exe -NoProfile -NonInteractive -Command \
-        '$code = Get-Command code -ErrorAction SilentlyContinue; if ($code) { code --install-extension ms-vscode-remote.remote-wsl --force }' \
-        || warn "Could not install the Windows-side WSL extension automatically."
+        '$code = Get-Command code -ErrorAction SilentlyContinue; if ($code) { code --install-extension ms-vscode-remote.remote-wsl --force }' ||
+        warn "Could not install the Windows-side WSL extension automatically."
     ok "Windows VS Code install step completed"
 }
 
@@ -1163,6 +1231,7 @@ main() {
     update_apt_metadata_and_resolve_llvm
     show_resolved_llvm_summary
     install_base_packages
+    configure_github_cli_repo
     install_optional_packages
     install_tool_profile_bundles
     install_python_314
