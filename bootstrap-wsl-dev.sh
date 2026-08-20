@@ -22,6 +22,7 @@ GITHUB_CLI_APT_KEY_FINGERPRINTS=(
     "2C6106201985B60E6C7AC87323F3D4EA75716059"
     "7F38BBB59D064DBCB3D84D725612B36462313325"
 )
+COPILOT_TOOLS_BUNDLE_LABEL="git-delta, universal-ctags, entr, cloc, sqlite3, direnv, pipx, zsh, bash-completion"
 INSTALL_WINDOWS_VSCODE="${INSTALL_WINDOWS_VSCODE:-1}"
 INSTALL_VSCODE_EXTENSIONS="${INSTALL_VSCODE_EXTENSIONS:-1}"
 INSTALL_VSCODE_EXT_CLANGD="${INSTALL_VSCODE_EXT_CLANGD:-}"
@@ -31,6 +32,7 @@ GENERATE_VSCODE_SETTINGS="${GENERATE_VSCODE_SETTINGS:-}"
 INSTALL_OPTIONAL_TOOLS_PROMPT="${INSTALL_OPTIONAL_TOOLS_PROMPT:-1}"
 INSTALL_GIT_LFS="${INSTALL_GIT_LFS:-}"
 INSTALL_GITHUB_CLI="${INSTALL_GITHUB_CLI:-}"
+INSTALL_COPILOT_TOOLS="${INSTALL_COPILOT_TOOLS:-}"
 INSTALL_DOCS_TOOLS="${INSTALL_DOCS_TOOLS:-}"
 INSTALL_IWYU="${INSTALL_IWYU:-}"
 INSTALL_PROFILING_TOOLS="${INSTALL_PROFILING_TOOLS:-}"
@@ -155,6 +157,7 @@ validate_configuration() {
     validate_bool_or_empty "INSTALL_VSCODE_EXT_CMAKE_SYNTAX" "$INSTALL_VSCODE_EXT_CMAKE_SYNTAX"
     validate_bool_or_empty "INSTALL_GIT_LFS" "$INSTALL_GIT_LFS"
     validate_bool_or_empty "INSTALL_GITHUB_CLI" "$INSTALL_GITHUB_CLI"
+    validate_bool_or_empty "INSTALL_COPILOT_TOOLS" "$INSTALL_COPILOT_TOOLS"
     validate_bool_or_empty "INSTALL_DOCS_TOOLS" "$INSTALL_DOCS_TOOLS"
     validate_bool_or_empty "INSTALL_IWYU" "$INSTALL_IWYU"
     validate_bool_or_empty "INSTALL_PROFILING_TOOLS" "$INSTALL_PROFILING_TOOLS"
@@ -252,6 +255,9 @@ configure_optional_choices() {
         if [[ -z "$INSTALL_PROFILE_PRODUCTIVITY" ]]; then
             if ask_yes_no "Install Productivity bundle (ripgrep, fzf, shell tooling, terminal helpers)?" "N"; then INSTALL_PROFILE_PRODUCTIVITY="1"; else INSTALL_PROFILE_PRODUCTIVITY="0"; fi
         fi
+        if [[ -z "$INSTALL_COPILOT_TOOLS" ]]; then
+            if ask_yes_no "Install common Copilot tools (${COPILOT_TOOLS_BUNDLE_LABEL})?" "N"; then INSTALL_COPILOT_TOOLS="1"; else INSTALL_COPILOT_TOOLS="0"; fi
+        fi
 
         if [[ -z "$GENERATE_VSCODE_SETTINGS" ]]; then
             if ask_yes_no "Generate .vscode/settings.json and .vscode/extensions.json in current directory?" "N"; then GENERATE_VSCODE_SETTINGS="1"; else GENERATE_VSCODE_SETTINGS="0"; fi
@@ -280,6 +286,7 @@ configure_optional_choices() {
     INSTALL_PROFILE_RELIABILITY="${INSTALL_PROFILE_RELIABILITY:-0}"
     INSTALL_PROFILE_TESTING="${INSTALL_PROFILE_TESTING:-0}"
     INSTALL_PROFILE_PRODUCTIVITY="${INSTALL_PROFILE_PRODUCTIVITY:-0}"
+    INSTALL_COPILOT_TOOLS="${INSTALL_COPILOT_TOOLS:-0}"
     GENERATE_VSCODE_SETTINGS="${GENERATE_VSCODE_SETTINGS:-0}"
     if [[ "$INSTALL_VSCODE_EXTENSIONS" == "1" ]]; then
         INSTALL_VSCODE_EXT_CLANGD="${INSTALL_VSCODE_EXT_CLANGD:-1}"
@@ -300,6 +307,7 @@ configure_optional_choices() {
     validate_bool "INSTALL_PROFILE_RELIABILITY" "$INSTALL_PROFILE_RELIABILITY"
     validate_bool "INSTALL_PROFILE_TESTING" "$INSTALL_PROFILE_TESTING"
     validate_bool "INSTALL_PROFILE_PRODUCTIVITY" "$INSTALL_PROFILE_PRODUCTIVITY"
+    validate_bool "INSTALL_COPILOT_TOOLS" "$INSTALL_COPILOT_TOOLS"
     validate_bool "GENERATE_VSCODE_SETTINGS" "$GENERATE_VSCODE_SETTINGS"
     validate_bool "INSTALL_VSCODE_EXT_CLANGD" "$INSTALL_VSCODE_EXT_CLANGD"
     validate_bool "INSTALL_VSCODE_EXT_CMAKE_TOOLS" "$INSTALL_VSCODE_EXT_CMAKE_TOOLS"
@@ -335,6 +343,7 @@ Configuration summary:
     - Reliability bundle:      $([[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]] && echo "yes" || echo "no")
     - Testing bundle:          $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
     - Productivity bundle:     $([[ "$INSTALL_PROFILE_PRODUCTIVITY" == "1" ]] && echo "yes" || echo "no")
+    - Copilot tools bundle:    $([[ "$INSTALL_COPILOT_TOOLS" == "1" ]] && echo "yes" || echo "no")
 
 EOF
 }
@@ -543,6 +552,50 @@ install_tool_profile_bundles() {
     fi
 }
 
+install_copilot_tools() {
+    CURRENT_STEP="install common Copilot tools"
+    [[ "$INSTALL_COPILOT_TOOLS" == "1" ]] || return 0
+
+    local requested_packages=(
+        "git-delta"
+        "universal-ctags"
+        "entr"
+        "cloc"
+        "sqlite3"
+        "direnv"
+        "pipx"
+        "zsh"
+        "bash-completion"
+    )
+    local installable=()
+    local package
+
+    for package in "${requested_packages[@]}"; do
+        if apt-cache show "$package" >/dev/null 2>&1; then
+            installable+=("$package")
+        else
+            warn "Copilot tool package not available on this release: $package"
+        fi
+    done
+
+    if ((${#installable[@]} > 0)); then
+        log "Installing common Copilot tools"
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${installable[@]}"
+        ok "Common Copilot tools installed"
+    else
+        warn "No common Copilot tools were installable from the configured repositories."
+        return 0
+    fi
+
+    if command_exists delta; then
+        git config --global core.pager delta
+        git config --global interactive.diffFilter "delta --color-only"
+        git config --global delta.navigate true
+        git config --global delta.light false
+        ok "Configured git-delta as the default Git pager"
+    fi
+}
+
 show_check_only_plan() {
     CURRENT_STEP="show check-only plan"
 
@@ -562,18 +615,21 @@ Planned actions:
      - Profiling tools: $([[ "$INSTALL_PROFILING_TOOLS" == "1" ]] && echo "yes" || echo "no")
   4) Install tool profile bundles by selection:
      - Performance bundle: $([[ "$INSTALL_PROFILE_PERFORMANCE" == "1" ]] && echo "yes" || echo "no")
-      - Reliability bundle: $([[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]] && echo "yes" || echo "no")
-      - Testing bundle: $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
-      - Productivity bundle: $([[ "$INSTALL_PROFILE_PRODUCTIVITY" == "1" ]] && echo "yes" || echo "no")
-  5) Install LLVM/Clang (${LLVM_VERSION_REQUESTED}) required package set; for optional LLVM packages try exact version, then apt.llvm.org exact, then unversioned fallback at least one major behind selected LLVM
-  6) Install IWYU if selected and available via candidate resolution
-  7) Configure LLVM alternatives
-  8) Optionally install Windows VS Code (machine scope) and VS Code extensions
-      - clangd extension: $([[ "$INSTALL_VSCODE_EXT_CLANGD" == "1" ]] && echo "yes" || echo "no")
-      - CMake Tools extension: $([[ "$INSTALL_VSCODE_EXT_CMAKE_TOOLS" == "1" ]] && echo "yes" || echo "no")
-      - CMake syntax extension: $([[ "$INSTALL_VSCODE_EXT_CMAKE_SYNTAX" == "1" ]] && echo "yes" || echo "no")
-  9) Optionally generate .vscode defaults in current directory
-  10) Configure git + ccache defaults and show versions
+     - Reliability bundle: $([[ "$INSTALL_PROFILE_RELIABILITY" == "1" ]] && echo "yes" || echo "no")
+     - Testing bundle: $([[ "$INSTALL_PROFILE_TESTING" == "1" ]] && echo "yes" || echo "no")
+     - Productivity bundle: $([[ "$INSTALL_PROFILE_PRODUCTIVITY" == "1" ]] && echo "yes" || echo "no")
+  5) Install common Copilot tools bundle by selection:
+     - Copilot tools bundle: $([[ "$INSTALL_COPILOT_TOOLS" == "1" ]] && echo "yes" || echo "no")
+     - Includes: ${COPILOT_TOOLS_BUNDLE_LABEL}
+  6) Install LLVM/Clang (${LLVM_VERSION_REQUESTED}) required package set; for optional LLVM packages try exact version, then apt.llvm.org exact, then unversioned fallback at least one major behind selected LLVM
+  7) Install IWYU if selected and available via candidate resolution
+  8) Configure LLVM alternatives
+  9) Optionally install Windows VS Code (machine scope) and VS Code extensions
+     - clangd extension: $([[ "$INSTALL_VSCODE_EXT_CLANGD" == "1" ]] && echo "yes" || echo "no")
+     - CMake Tools extension: $([[ "$INSTALL_VSCODE_EXT_CMAKE_TOOLS" == "1" ]] && echo "yes" || echo "no")
+     - CMake syntax extension: $([[ "$INSTALL_VSCODE_EXT_CMAKE_SYNTAX" == "1" ]] && echo "yes" || echo "no")
+  10) Optionally generate .vscode defaults in current directory
+  11) Configure git + ccache defaults and show versions
 
 To run for real, set CHECK_ONLY=0 (or unset it) and rerun.
 
@@ -1198,6 +1254,17 @@ Recommended next actions for C++ in WSL:
   2) Configure with Ninja + compile_commands.json (command above)
   3) Run clangd from VS Code in this WSL environment
 EOF
+
+    if [[ "$INSTALL_COPILOT_TOOLS" == "1" ]] && command_exists direnv; then
+        cat <<'EOF'
+
+Copilot tools note:
+  - To enable direnv in bash, add this to ~/.bashrc:
+      eval "$(direnv hook bash)"
+  - For zsh, add this to ~/.zshrc:
+      eval "$(direnv hook zsh)"
+EOF
+    fi
 }
 
 show_warnings_recap() {
@@ -1234,6 +1301,7 @@ main() {
     configure_github_cli_repo
     install_optional_packages
     install_tool_profile_bundles
+    install_copilot_tools
     install_python_314
     install_llvm
     install_iwyu_if_selected
