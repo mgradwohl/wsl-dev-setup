@@ -592,7 +592,6 @@ install_copilot_tools() {
         git config --global interactive.diffFilter "delta --color-only"
         git config --global delta.navigate true
         git config --global delta.light false
-        git config --global merge.conflictstyle zdiff3
         ok "Configured git-delta as the default Git pager"
     fi
 }
