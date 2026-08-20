@@ -40,9 +40,6 @@ INSTALL_PROFILE_PERFORMANCE="${INSTALL_PROFILE_PERFORMANCE:-}"
 INSTALL_PROFILE_RELIABILITY="${INSTALL_PROFILE_RELIABILITY:-}"
 INSTALL_PROFILE_TESTING="${INSTALL_PROFILE_TESTING:-}"
 INSTALL_PROFILE_PRODUCTIVITY="${INSTALL_PROFILE_PRODUCTIVITY:-}"
-GH_COPILOT_AUTH_TIMEOUT_SECONDS="${GH_COPILOT_AUTH_TIMEOUT_SECONDS:-15}"
-GH_COPILOT_QUERY_TIMEOUT_SECONDS="${GH_COPILOT_QUERY_TIMEOUT_SECONDS:-30}"
-GH_COPILOT_INSTALL_TIMEOUT_SECONDS="${GH_COPILOT_INSTALL_TIMEOUT_SECONDS:-60}"
 CHECK_ONLY="${CHECK_ONLY:-0}"
 
 CURRENT_STEP="startup"
@@ -115,12 +112,6 @@ validate_bool_or_empty() {
     [[ -z "$value" || "$value" =~ ^[01]$ ]] || die "${name} must be 0, 1, or unset."
 }
 
-validate_positive_integer() {
-    local name="$1"
-    local value="$2"
-    [[ "$value" =~ ^[1-9][0-9]*$ ]] || die "${name} must be a positive integer."
-}
-
 ask_yes_no() {
     local prompt="$1"
     local default="${2:-N}"
@@ -159,9 +150,6 @@ validate_configuration() {
     validate_bool "INSTALL_VSCODE_EXTENSIONS" "$INSTALL_VSCODE_EXTENSIONS"
     validate_bool "INSTALL_OPTIONAL_TOOLS_PROMPT" "$INSTALL_OPTIONAL_TOOLS_PROMPT"
     validate_bool "CHECK_ONLY" "$CHECK_ONLY"
-    validate_positive_integer "GH_COPILOT_AUTH_TIMEOUT_SECONDS" "$GH_COPILOT_AUTH_TIMEOUT_SECONDS"
-    validate_positive_integer "GH_COPILOT_QUERY_TIMEOUT_SECONDS" "$GH_COPILOT_QUERY_TIMEOUT_SECONDS"
-    validate_positive_integer "GH_COPILOT_INSTALL_TIMEOUT_SECONDS" "$GH_COPILOT_INSTALL_TIMEOUT_SECONDS"
 
     validate_bool_or_empty "GENERATE_VSCODE_SETTINGS" "$GENERATE_VSCODE_SETTINGS"
     validate_bool_or_empty "INSTALL_VSCODE_EXT_CLANGD" "$INSTALL_VSCODE_EXT_CLANGD"
@@ -607,41 +595,6 @@ install_copilot_tools() {
         git config --global merge.conflictstyle zdiff3
         ok "Configured git-delta as the default Git pager"
     fi
-
-    if command_exists gh; then
-        local gh_auth_status=0
-        local gh_extensions
-        if timeout "${GH_COPILOT_AUTH_TIMEOUT_SECONDS}s" gh auth status >/dev/null 2>&1; then
-            gh_auth_status=0
-        else
-            gh_auth_status=$?
-        fi
-
-        if [[ "$gh_auth_status" -eq 0 ]]; then
-            if gh_extensions="$(timeout "${GH_COPILOT_QUERY_TIMEOUT_SECONDS}s" gh extension list 2>/dev/null)"; then
-                if ! printf '%s\n' "$gh_extensions" | awk '{ for (i = 1; i <= NF; ++i) if ($i == "github/gh-copilot") found=1 } found { exit 0 } END { exit(found ? 0 : 1) }'; then
-                    log "Installing GitHub Copilot CLI extension for gh"
-                    if timeout "${GH_COPILOT_INSTALL_TIMEOUT_SECONDS}s" gh extension install github/gh-copilot; then
-                        ok "Installed gh-copilot extension"
-                    else
-                        warn "Could not install gh-copilot extension automatically."
-                    fi
-                fi
-            else
-                warn "Could not query gh extensions automatically; skipping gh-copilot extension installation."
-            fi
-        else
-            # Best-effort timeout detection for the Ubuntu/coreutils timeout used by
-            # this bootstrap: 124 is the conventional deadline-exceeded exit code.
-            if [[ "$gh_auth_status" -eq 124 ]]; then
-                warn "Timed out while checking GitHub CLI authentication; skipping gh-copilot extension installation."
-            else
-                warn "GitHub CLI is not authenticated; skipping gh-copilot extension installation."
-            fi
-        fi
-    else
-        warn "GitHub CLI is not installed; skipping gh-copilot extension installation."
-    fi
 }
 
 show_check_only_plan() {
@@ -669,7 +622,6 @@ Planned actions:
   5) Install common Copilot tools bundle by selection:
      - Copilot tools bundle: $([[ "$INSTALL_COPILOT_TOOLS" == "1" ]] && echo "yes" || echo "no")
      - Includes: ${COPILOT_TOOLS_BUNDLE_LABEL}
-     - Optional add-on: gh-copilot extension when gh is installed
   6) Install LLVM/Clang (${LLVM_VERSION_REQUESTED}) required package set; for optional LLVM packages try exact version, then apt.llvm.org exact, then unversioned fallback at least one major behind selected LLVM
   7) Install IWYU if selected and available via candidate resolution
   8) Configure LLVM alternatives

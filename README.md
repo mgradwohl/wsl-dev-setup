@@ -81,9 +81,6 @@ GENERATE_VSCODE_SETTINGS=1 \
 | `INSTALL_PROFILE_RELIABILITY` | unset | Force install of reliability bundle (`1`/`0`) |
 | `INSTALL_PROFILE_TESTING` | unset | Force install of testing bundle (`1`/`0`) |
 | `INSTALL_PROFILE_PRODUCTIVITY` | unset | Force install of productivity CLI bundle (`1`/`0`) |
-| `GH_COPILOT_AUTH_TIMEOUT_SECONDS` | `15` | Timeout for `gh auth status` before skipping `gh-copilot` auto-install |
-| `GH_COPILOT_QUERY_TIMEOUT_SECONDS` | `30` | Timeout for `gh extension list` before skipping `gh-copilot` auto-install |
-| `GH_COPILOT_INSTALL_TIMEOUT_SECONDS` | `60` | Timeout for `gh extension install` before warning and continuing |
 | `GENERATE_VSCODE_SETTINGS` | unset | Force generation of `.vscode` defaults (`1`/`0`) |
 
 When `INSTALL_IWYU=1`, the script now tries the best available package candidate for your selected LLVM major (`include-what-you-use-<major>`, then `include-what-you-use`, then `iwyu`). If none are available on your release, it logs a clear warning and continues.
@@ -93,7 +90,7 @@ Tool profile bundles:
 - Reliability: `cppcheck`, `bear`, and ELF/debug diagnostics helpers when available.
 - Testing: `lcov`, `gcovr`, `catch2`, and `libgtest-dev` when available.
 - Productivity: `ripgrep`, `fd-find`, `bat`, `fzf`, `yq`, `tree`, `shellcheck`, `shfmt`, `htop`, `btop`, `ncdu`, and `tmux` when available.
-- Common Copilot tools: `git-delta`, `universal-ctags`, `entr`, `cloc`, `sqlite3`, `direnv`, `pipx`, `zsh`, and `bash-completion` when available; also tries to install `gh-copilot` when `gh` is installed.
+- Common Copilot tools: `git-delta`, `universal-ctags`, `entr`, `cloc`, `sqlite3`, `direnv`, `pipx`, `zsh`, and `bash-completion` when available.
 
 Check-only mode (`CHECK_ONLY=1`) prints a full action plan and exits before installs or configuration changes.
 
@@ -207,14 +204,11 @@ Use `INSTALL_COPILOT_TOOLS=1` (or answer Yes at startup) to install a bundle of 
 - `pipx` for isolated Python CLI tool installs
 - `zsh` and `bash-completion` for improved shell/completion support
 
-If `gh` is installed and authenticated, the bootstrap also attempts to install the official `gh-copilot` extension.
-The current script defaults use a 15-second timeout when checking `gh` authentication, a 30-second timeout when listing installed `gh` extensions, and a 60-second timeout when attempting the extension install. These defaults can be adjusted with `GH_COPILOT_AUTH_TIMEOUT_SECONDS`, `GH_COPILOT_QUERY_TIMEOUT_SECONDS`, and `GH_COPILOT_INSTALL_TIMEOUT_SECONDS` if your network is slow.
-
 Post-install behavior:
 - configures `git-delta` as the default Git pager
 - prints a reminder for enabling `direnv` in `~/.bashrc` or `~/.zshrc`
 
-This bundle intentionally avoids curl-pipe-to-shell installers. Tools such as `uv`, `ast-grep`, or a Node.js toolchain are left out unless they can be added later with a clearer packaging and trust story.
+This bundle intentionally avoids curl-pipe-to-shell installers. The standalone GitHub Copilot CLI, `uv`, `ast-grep`, and a Node.js toolchain are left out unless they can be added later with a clearer packaging and trust story.
 
 ---
 
